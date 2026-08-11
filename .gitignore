@@ -1,8 +1,6 @@
 # Obsidian settings
 .obsidian/
 
-# PDF files (too large for git)
-*.pdf
 
 # OS files
 .DS_Store
