@@ -2,6 +2,106 @@
 
 ---
 
+```text
+MỤC LỤC (TABLE OF CONTENTS)
+├── 1. Giới thiệu về UART & Cấu hình Phần cứng — Introducing the UART & Hardware Setup
+│   ├── 1.1 Khái niệm về UART
+│   ├── 1.2 Cấu hình Nối dây Phần cứng trên STM32 Nucleo-F767ZI
+│   ├── 1.3 Quy trình 10 Bước Cấu hình Ngoại vi trên STM32 (10-Step Peripheral Initialization Setup)
+├── 2. Driver UART bằng phương pháp Vòng lặp Chờ — Creating a Polled UART Driver
+│   ├── 2.1 Mã nguồn Minh họa Driver Polling
+│   │   └── 1. Task Nhận Dữ liệu theo cơ chế Polling (`polledUartReceive`):
+│   │   └── 2. Task Tiêu thụ & In Dữ liệu (`uartPrintOutTask`):
+│   ├── 2.2 Phân tích Hiệu năng & Giới hạn Toán học (Math & Performance Limits)
+│   ├── 2.3 Đánh giá Ưu/Nhược điểm & Trường hợp Sử dụng Polled Drivers
+├── 3. Phân biệt Task vs Trình xử lý Ngắt ISR — Differentiating between Tasks and ISRs
+│   ├── 3.1 So sánh Chi tiết: FreeRTOS Task vs Hardware ISR (Tasks vs ISRs Comparison)
+│   │   └── 1. Các Điểm Giống nhau (Similarities):
+│   │   └── 2. Bảng So sánh 6 Điểm Khác biệt Cốt lõi (Differences):
+│   ├── 3.2 Sử dụng FreeRTOS API từ Trình xử lý Ngắt — Using the FreeRTOS API from Interrupts
+│   │   └── Các Quy tắc & Đặc điểm Cốt lõi khi gọi API từ Ngắt:
+│   │   └── Chi tiết Phép Dịch Bit Thanh ghi NVIC trên Cortex-M:
+├── 4. Xây dựng Driver UART dựa trên Ngắt — Creating ISR-Based Drivers
+│   ├── 4.1 Driver dựa trên Ngắt dùng Queue — Queue-Based Driver
+│   │   └── 1. Task Nhận và In Dữ liệu (`uartPrintOutTask`)
+│   │   └── 2. Hàm Kích hoạt Ngắt Nhận (`startReceiveInt`)
+│   │   └── 3. Trình xử lý Ngắt phần cứng (`USART2_IRQHandler`)
+│   │   └── 4. Bộ phát Dữ liệu Mẫu Nền (`startUart4Traffic`)
+│   │   └── 5. Mẹo Liên kết Trình xử lý Ngắt (Tips for Linking ISRs)
+│   │   └── 6. Quy trình Vận hành Toàn bộ Hệ thống Driver 4.1 (End-to-End System Workflow)
+│   │   └── 7. Phân tích Hiệu năng (Performance Analysis)
+│   ├── 4.2 Driver UART dùng Bộ đệm Buffer — Buffer-Based Driver
+│   │   └── 1. Hàm Kích hoạt Nhận Khối Dữ liệu (`startReceiveInt`)
+│   │   └── 2. Task Nhận Khối Dữ liệu (`uartPrintOutTask`)
+│   │   └── 3. Trình xử lý Ngắt Gom Dữ liệu vào Buffer (`USART2_IRQHandler`)
+│   │   └── 4. Quy trình Vận hành Toàn bộ Hệ thống Driver 4.2 (End-to-End System Workflow)
+│   │   └── 5. Phân tích Hiệu năng (Performance Analysis)
+├── 5. Driver dựa trên Bộ truy cập Bộ nhớ Trực tiếp — Creating DMA-Based Drivers
+│   ├── 5.1 Khái niệm & Cấu hình DMA trên STM32F767 — Understanding & Configuring DMA
+│   │   └── 1. DMA (Direct Memory Access) là gì?
+│   │   └── 2. Tại sao phải dùng DMA thay vì Ngắt ISR thông thường?
+│   │   └── 3. Cấu trúc DMA trên Vi điều khiển STM32F767
+│   │   └── 4. Các Chế độ Truyền của DMA (Transfer Modes)
+│   │   └── 5. Cấu hình Mã nguồn C chuẩn cho DMA1 Stream 5 (`USART2_RX`)
+│   ├── 5.2 Trình xử lý Ngắt DMA — DMA Interrupt Handler
+│   ├── 5.3 So sánh Hiệu năng ở Tốc độ Cực cao (256,000 Baud)
+├── 6. FreeRTOS Stream Buffers (FreeRTOS 10+)
+│   │   └── 1. FreeRTOS Stream Buffer là gì?
+│   │   └── 2. Kỹ thuật Phần cứng DMA Double-Buffering (Bộ đệm kép)
+│   │   └── 3. Sơ đồ Hoạt động Kết hợp DMA Double-Buffering & Stream Buffer
+│   ├── 6.2 Sử dụng API Stream Buffer — Using the stream buffer API
+│   │   └── 1. Cú pháp & Mục đích của API Stream Buffer
+│   │   └── 2. Mã nguồn Task Nhận (`uartPrintOutTask`):
+│   ├── 6.3 Cấu hình DMA Bộ đệm Kép — Setting up double-buffered DMA
+│   ├── 6.4 Nạp Dữ liệu vào Stream Buffer trong Ngắt — Populating the stream buffer
+├── 7. Mô hình Lựa chọn Driver & Thư viện Bên thứ 3 — Choosing a Driver Model & Vendor Libraries
+│   ├── 7.1 4 Câu hỏi Cốt lõi Lựa chọn Kiến trúc Driver (Key Decision Factors)
+│   │   └── 1. Mã nguồn cấp cao được thiết kế như thế nào? (How is calling code designed?)
+│   │   └── 2. Mức độ Trễ (Latency) chấp nhận được là bao nhiêu? (How much delay is acceptable?)
+│   │   └── 3. Tốc độ di chuyển dữ liệu nhanh đến mức nào? (How fast is data moving?)
+│   │   └── 4. Bạn đang giao tiếp với loại thiết bị ngoại vi nào? (What type of device?)
+│   ├── 7.2 Tiêu chí Lựa chọn Phương pháp Driver
+│   │   └── Khi nào nên dùng Queue-Based Drivers?
+│   │   └── Khi nào nên dùng Buffer-Based Drivers?
+│   │   └── Khi nào nên dùng Stream Buffers / Message Buffers?
+│   ├── 7.3 Đánh giá Thư viện Bên thứ 3 (STM32 HAL) & Nguyên lý Liên kết Lỏng (Loose Coupling)
+│   │   └── 1. Vai trò của STM32 HAL (Hardware Abstraction Layer)
+│   │   └── 2. Khi nào nên tự viết Driver chốt thanh ghi trực tiếp (Bare-Metal Driver)?
+│   │   └── 3. Nguyên lý Kiến trúc Liên kết Lỏng (Loose Coupling Architecture)
+├── 8. Tổng kết & Đáp án Câu hỏi Ôn tập — Summary & Review Questions
+│   ├── 8.1 Bảng tổng hợp các API trong Chương 10
+│   ├── 8.2 Đáp án Câu hỏi Ôn tập từ Sách (Review Questions & Answers)
+│   │   └── Câu 1: Loại driver nào phức tạp hơn khi viết và sử dụng?
+│   │   └── Câu 2: Trong FreeRTOS, có thể gọi BẤT KỲ hàm RTOS nào từ trong một ISR: Đúng hay Sai?
+│   │   └── Câu 3: Khi dùng RTOS, các ngắt phần cứng luôn liên tục tranh chấp thời gian CPU với Scheduler: Đúng hay Sai?
+│   │   └── Câu 4: Kỹ thuật driver nào tốn ÍT tài nguyên CPU nhất khi truyền khối dữ liệu lớn ở tốc độ cao?
+│   │   └── Câu 5: DMA là viết tắt của từ gì?
+│   │   └── Câu 6: Nêu một trường hợp mà việc dùng Raw Buffer-based Driver KHÔNG phải là ý tưởng tốt?
+├── 9. Tổng hợp Các Phương pháp Driver UART trong RTOS — Architecture Synthesis & Senior Embedded Best Practices
+│   ├── 9.1 Chi tiết 6 Phương pháp Thiết kế Driver UART trong RTOS
+│   │   └── 1. Polled UART Driver (Driver dùng Vòng lặp Chờ Polling)
+│   │   └── 2. Interrupt-Driven Queue Driver (Driver Ngắt từng Byte nạp Queue)
+│   │   └── 3. Interrupt-Driven Buffer Driver (Driver Ngắt nạp Bộ đệm RAM + Semaphore)
+│   │   └── 4. DMA Single-Buffer Driver (Driver DMA Bộ đệm Thường + Semaphore)
+│   │   └── 5. DMA Double-Buffering + FreeRTOS Stream Buffer (Driver DMA Bộ đệm Kép + Lockless FIFO)
+│   │   └── 6. DMA / ISR + Idle Line Detection (Driver DMA kết hợp Ngắt Đường truyền Rảnh `IDLEIE`)
+│   ├── 9.2 Tổng kết Xếp hạng & Best Practices từ Các Senior Embedded Engineers
+├── 10. Kiến thức Bổ trợ: Quản lý Ngắt Chuyên sâu — Advanced ISR Management
+│   ├── 10.1 Mẫu Thiết kế Xử lý Ngắt Trì hoãn (Deferred Interrupt Processing Pattern)
+│   ├── 10.2 Đồng bộ ISR-Task bằng Semaphore (ISR-Task Synchronization)
+│   │   └── 1. Sử dụng Binary Semaphore (Semaphore Nhị phân)
+│   │   └── 2. Sử dụng Counting Semaphore (Semaphore Đếm)
+│   ├── 10.3 Xử lý Ngắt Trì hoãn Tập trung (Centralized Deferred Interrupt Processing)
+│   ├── 10.4 Các Mẫu nâng cao khi sử dụng Queue trong ISR (Advanced Queue Usage)
+│   ├── 10.5 Cơ chế pxHigherPriorityTaskWoken chuyên sâu
+│   │   └── Tại sao FreeRTOS bắt buộc phải dùng Yield thủ công từ ISR?
+│   ├── 10.6 Cấu hình Lồng Ngắt và Những Cạm Bẫy NVIC (Interrupt Nesting & NVIC Gotchas)
+│   │   └── 1. Cấu hình Lồng Ngắt trong FreeRTOSConfig.h
+│   │   └── 2. Cạm Bẫy (Gotchas) của NVIC trên ARM Cortex-M
+│   │   └── Bản đồ Ưu tiên NVIC (Cortex-M NVIC Priority Map)
+```
+
+
 ## <span style="color:#e67e22">1. Giới thiệu về UART & Cấu hình Phần cứng — Introducing the UART & Hardware Setup</span>
 
 Tương tác với các ngoại vi vi điều khiển (MCU peripherals) là một trong những nhiệm vụ quan trọng nhất của hệ thống nhúng. Trong chương này, chúng ta sẽ xây dựng các trình điều khiển (drivers) cho ngoại vi truyền thông phổ biến: **UART (Universal Asynchronous Receiver/Transmitter)**.
@@ -960,3 +1060,113 @@ graph TD
 > **LỜI KHUYÊN TỪ SENIOR EMBEDDED ENGINEER:**
 > 1. **Tuyệt đối không bao giờ dùng Queue để truyền nhận từng byte UART ở Baudrate > 115,200 bps** trong các dự án thực tế vì overhead ngắt và Context Switch sẽ đánh sập hệ thống RTOS.
 > 2. **Với các ứng dụng giao tiếp Module Wi-Fi/4G/GPS (gửi chuỗi AT Command / JSON)**: Luôn ưu tiên dùng **DMA + Ngắt IDLE Line (`IDLEIE`)**. Đây là phương pháp tối ưu nhất cả về hiệu năng CPU lẫn tính linh hoạt xử lý chuỗi ký tự độ dài ngẫu nhiên!
+
+
+## <span style="color:#e67e22">10. Kiến thức Bổ trợ: Quản lý Ngắt Chuyên sâu — Advanced ISR Management</span>
+
+> [!NOTE]
+> 📗 **Bổ sung từ: Mastering the FreeRTOS Kernel - Richard Barry (Chapter 6)**
+
+### <span style="color:#1abc9c">10.1 Mẫu Thiết kế Xử lý Ngắt Trì hoãn (Deferred Interrupt Processing Pattern)</span>
+
+* **Vấn đề**: Hàm ngắt (ISR) phải được giữ càng NGẮN càng tốt để không làm ảnh hưởng đến thời gian đáp ứng (responsiveness) của toàn hệ thống và không chặn các ngắt khác.
+* **Giải pháp (Deferred Processing)**: ISR chỉ làm lượng công việc tối thiểu (xóa cờ ngắt phần cứng, thu thập dữ liệu thô). Các công việc xử lý nặng nhọc (tính toán, phân tích, cấp phát) sẽ được "trì hoãn" (deferred) và giao lại cho một Task xử lý thông thường (Handler Task).
+* **Cơ chế hoạt động**:
+  - Handler Task là một FreeRTOS task bình thường, thường được đặt ở mức ưu tiên cao.
+  - Task này phần lớn thời gian sẽ nằm ở trạng thái **Blocked**, chờ đợi trên một đối tượng đồng bộ (như Semaphore, Queue, Task Notification).
+  - Khi ngắt xảy ra, ISR làm việc cực nhanh, sau đó "đánh thức" (signal) Handler Task bằng cách giải phóng đối tượng đồng bộ.
+  - Sau khi ISR kết thúc, Scheduler sẽ chuyển ngữ cảnh (Context Switch) sang Handler Task để thực hiện nốt phần việc phức tạp ở mức ưu tiên của Task.
+
+### <span style="color:#1abc9c">10.2 Đồng bộ ISR-Task bằng Semaphore (ISR-Task Synchronization)</span>
+
+#### <span style="color:#3498db">1. Sử dụng Binary Semaphore (Semaphore Nhị phân)</span>
+* **Mô hình Bất đối xứng (Asymmetric Pattern)**: Trong trường hợp đồng bộ ngắt, ISR **luôn luôn Give (cho)** và Task **luôn luôn Take (nhận)**. Không bao giờ làm ngược lại.
+* **API trong Ngắt**: `xSemaphoreGiveFromISR(xBinarySemaphore, &xHigherPriorityTaskWoken)`
+  - Không cần (và không có) tham số `xTicksToWait` vì ngắt không bao giờ được phép chặn (non-blocking).
+  - **Nhược điểm (Rủi ro mất sự kiện)**: Nếu ISR "Give" nhiều lần liên tiếp khi Semaphore đã có sẵn (Task chưa kịp "Take"), thì các lần Give sau sẽ bị bỏ qua. Điều này dẫn đến việc mất sự kiện (lost events).
+* **API trong Task**: `xSemaphoreTake(xBinarySemaphore, xTicksToWait)`
+  - Task sẽ chặn (Block) chờ đến khi ISR Give. Dùng `portMAX_DELAY` để chờ vô hạn (yêu cầu `INCLUDE_vTaskSuspend = 1`).
+
+#### <span style="color:#3498db">2. Sử dụng Counting Semaphore (Semaphore Đếm)</span>
+* **Giải quyết vấn đề mất sự kiện**: Counting Semaphore lưu trữ lịch sử các sự kiện bằng một bộ đếm (Count). Nếu ISR "Give" 5 lần trước khi Handler Task kịp chạy, Count sẽ tăng lên 5.
+* **API Khởi tạo**: `xSemaphoreCreateCounting(uxMaxCount, uxInitialCount)`
+  - Dùng cho Đếm Sự kiện (Event Counting): `MaxCount` = số sự kiện tối đa, `InitialCount` = 0 (khởi tạo chưa có sự kiện nào).
+  - Dùng cho Quản lý Tài nguyên (Resource Management): `InitialCount` = `MaxCount` (khởi tạo có sẵn tất cả tài nguyên).
+* **Nguyên lý Latch**: Mọi sự kiện phát ra từ ISR đều được "chốt" (latched) lại. Mỗi lần "Give" đếm tăng lên 1, mỗi lần "Take" đếm giảm đi 1. Handler Task sẽ lần lượt xử lý đủ 5 sự kiện mà không bỏ sót.
+
+### <span style="color:#1abc9c">10.3 Xử lý Ngắt Trì hoãn Tập trung (Centralized Deferred Interrupt Processing)</span>
+
+* Thay vì phải tạo riêng một Handler Task cho MỖI loại ngắt (rất lãng phí RAM cho Stack), FreeRTOS cung cấp cơ chế tập trung thông qua **RTOS Daemon Task** (trước đây gọi là Timer Task).
+* **API**: `xTimerPendFunctionCallFromISR(xFunctionToPend, pvParameter1, ulParameter2, pxHigherPriorityTaskWoken)`
+* **Cơ chế**: Hàm xử lý `xFunctionToPend` sẽ được đẩy vào hàng đợi của Timer Command Queue và thực thi trong ngữ cảnh của Daemon Task.
+* **Ưu điểm**: Không tốn tài nguyên tạo riêng Handler Task. Tiết kiệm bộ nhớ.
+* **Nhược điểm**: Hàm xử lý sẽ chạy với mức ưu tiên của Daemon Task (`configTIMER_TASK_PRIORITY`). Nếu ngắt quá quan trọng và yêu cầu xử lý ngay lập tức ở mức độ ưu tiên cao nhất, phương pháp này có thể không phù hợp.
+
+### <span style="color:#1abc9c">10.4 Các Mẫu nâng cao khi sử dụng Queue trong ISR (Advanced Queue Usage)</span>
+
+* **API trong ISR**:
+  - `xQueueSendToBackFromISR()`: Gửi vào cuối hàng đợi (phổ biến nhất).
+  - `xQueueSendToFrontFromISR()`: Gửi vào đầu hàng đợi (cho các dữ liệu khẩn cấp).
+  - `xQueueReceiveFromISR()`: Khá hiếm dùng, nhưng vẫn tồn tại (VD: ISR nhận lệnh từ một Queue).
+* **Ưu điểm của Queue so với Semaphore trong ISR**: Semaphore chỉ báo hiệu CÓ sự kiện, trong khi Queue chuyển được cả DỮ LIỆU. Thay vì Task phải dùng biến toàn cục để đọc dữ liệu (dễ gây xung đột), ISR đóng gói thẳng dữ liệu vào Queue an toàn.
+
+### <span style="color:#1abc9c">10.5 Cơ chế pxHigherPriorityTaskWoken chuyên sâu</span>
+
+#### <span style="color:#3498db">Tại sao FreeRTOS bắt buộc phải dùng Yield thủ công từ ISR?</span>
+1. **Tránh Chuyển Ngữ cảnh Không cần thiết**: Tối ưu hiệu năng bằng cách không ép buộc Context Switch sau mỗi lệnh gọi API.
+2. **Tính Tiền định (Deterministic Execution)**: ISR sẽ không bao giờ bị ngắt ngang bởi một Task. Toàn bộ logic của ISR luôn chạy đến cùng.
+3. **Tính Di động (Portability)**: Không phải vi điều khiển nào cũng hỗ trợ chuyển ngữ cảnh tự động ngay bên trong ngắt.
+4. **Tính An toàn**: Việc đổi ngữ cảnh chỉ diễn ra sau khi TẤT CẢ công việc dọn dẹp, xử lý cờ ngắt của ISR đã hoàn tất.
+5. **Tối ưu Hóa nhiều lệnh gọi**: Khi ISR gọi nhiều API `*FromISR` liên tiếp, biến `pxHigherPriorityTaskWoken` sẽ "cộng dồn" (OR) trạng thái. Context switch chỉ diễn ra đúng 1 lần ở cuối.
+
+```c
+void EXTI0_IRQHandler(void) {
+    // 1. PHẢI khởi tạo bằng pdFALSE
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    
+    // 2. Gọi nhiều API FromISR, truyền địa chỉ của cờ
+    xQueueSendToBackFromISR(xQueue, &data, &xHigherPriorityTaskWoken);
+    xSemaphoreGiveFromISR(xSem, &xHigherPriorityTaskWoken);
+    
+    // 3. Chỉ Yield DUY NHẤT MỘT LẦN ở cuối ISR
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+```
+
+### <span style="color:#1abc9c">10.6 Cấu hình Lồng Ngắt và Những Cạm Bẫy NVIC (Interrupt Nesting & NVIC Gotchas)</span>
+
+#### <span style="color:#3498db">1. Cấu hình Lồng Ngắt trong FreeRTOSConfig.h</span>
+* `configKERNEL_INTERRUPT_PRIORITY`:
+  - Mức ưu tiên ngắt của Tick Timer (SysTick) và PendSV.
+  - **BẮT BUỘC** phải được đặt ở mức ưu tiên THẤP NHẤT (giá trị số lớn nhất).
+  - *Ví dụ*: Trên Cortex-M4 có 4 bit độ ưu tiên, giá trị lớn nhất là 15, khi dịch bit vào thanh ghi 8-bit sẽ là `(15 << 4) = 240` hoặc `0xF0`.
+* `configMAX_SYSCALL_INTERRUPT_PRIORITY`:
+  - Mức ưu tiên ngắt **cao nhất** mà tại đó các hàm API FreeRTOS (đuôi `*FromISR`) được phép gọi.
+  - Bất kỳ ngắt nào có mức ưu tiên CAO HƠN mức này (số nhỏ hơn) sẽ KHÔNG BAO GIỜ bị chặn (delayed) bởi FreeRTOS. Chúng là các ngắt ưu tiên cực cao (Zero-latency).
+
+#### <span style="color:#3498db">2. Cạm Bẫy (Gotchas) của NVIC trên ARM Cortex-M</span>
+1. **Đánh số Ưu tiên Ngược (Inverted Numbering)**: Số càng NHỎ ➔ Độ ưu tiên càng CAO (Ngược hoàn toàn với cách đánh số Priority của Task trong FreeRTOS).
+2. **Dịch Bit (Bit Shifting)**: Cortex-M chỉ sử dụng các bit cao (upper N bits) của thanh ghi 8-bit. (Ví dụ 4 bit ➔ các mức 0, 16, 32, ..., 240).
+3. **Cạm bẫy Priority bằng 0 (Mặc định)**: Mặc định NVIC gán toàn bộ ngắt ở mức 0 (Cao nhất). Mức này mạnh hơn `configMAX_SYSCALL_INTERRUPT_PRIORITY`! **Nếu gọi FreeRTOS API trong ngắt mặc định này, hệ thống sẽ CRASH lập tức.** Luôn luôn gọi `NVIC_SetPriority()` trước khi Enable ngắt.
+4. **Sub-priority phải bằng 0**: Các bit nhóm phụ (Sub-priority bits) không được hỗ trợ bởi FreeRTOS. Tham số `configPRIO_BITS` phải khớp với hằng số `__NVIC_PRIO_BITS`.
+5. **configASSERT**: Bật `configASSERT()` là cứu cánh duy nhất để bắt được lỗi cấu hình ưu tiên ngắt ngay trong runtime.
+
+#### <span style="color:#3498db">Bản đồ Ưu tiên NVIC (Cortex-M NVIC Priority Map)</span>
+
+```text
+       ĐỘ ƯU TIÊN PHẦN CỨNG (SỐ CÀNG NHỎ - ƯU TIÊN CÀNG CAO)
+       -----------------------------------------------------
+Priority 0 (highest) ─── ❌ KHÔNG ĐƯỢC GỌI API FreeRTOS (Zero-latency)
+Priority 1           ─── ❌ KHÔNG ĐƯỢC GỌI API FreeRTOS
+Priority ...
+─── configMAX_SYSCALL_INTERRUPT_PRIORITY (Ví dụ: 5) ──────────────
+Priority 5           ─── ✅ CÓ THỂ gọi FreeRTOS API (*FromISR)
+Priority 6           ─── ✅ CÓ THỂ gọi FreeRTOS API (*FromISR)
+Priority ...                    
+Priority 14          ─── ✅ CÓ THỂ gọi FreeRTOS API (*FromISR)
+Priority 15 (lowest) ─── configKERNEL_INTERRUPT_PRIORITY (SysTick, PendSV)
+```
+
+---
+
+[⬅️ Chương trước: Chương 9](Chapter_09.md) | [Chương tiếp theo: Chương 11 ➡️](Chapter_11.md)

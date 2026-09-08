@@ -1,4 +1,4 @@
-﻿# <span style="color:#f1c40f">📘 Chapter 1: Introducing Real-Time Systems</span>
+# <span style="color:#f1c40f">📘 Chapter 1: Introducing Real-Time Systems</span>
 ## <span style="color:#e67e22">Ghi chép kiến thức đầy đủ — Hands-On RTOS with Microcontrollers</span>
 
 ---
@@ -25,9 +25,10 @@
  7.  Phạm vi RTOSes — Free vs Paid   — Safety cert, middleware, support
  8.  Tại sao sách chọn FreeRTOS?     — 15+ năm, MIT license, portable
  9.  Khi nào nên dùng RTOS?          — Bảng quyết định "Goldilocks"
-10.  Điểm khác biệt RTOS vs GPOS    — Code so sánh mutex timeout
-11.  Câu hỏi ôn tập                  — 6 câu hỏi + đáp án
- 📌  Tóm tắt chương                  — Mindmap tổng kết
+ 10.  Điểm khác biệt RTOS vs GPOS    — Code so sánh mutex timeout
+ 11.  Kiến thức bổ sung (FreeRTOS)   — Tính năng, License, Cấu trúc, Coding Style
+ 12.  Câu hỏi ôn tập                  — 6 câu hỏi + đáp án
+  📌  Tóm tắt chương                  — Mindmap tổng kết
 ```
 
 ---
@@ -970,7 +971,127 @@ mutex_lock(mutex, 100ms);   // Chờ tối đa 100ms
 
 ---
 
-## <span style="color:#e67e22">11. Câu hỏi ôn tập (từ sách)</span>
+## <span style="color:#e67e22">11. Kiến thức bổ sung (Mastering the FreeRTOS Kernel)</span>
+
+> 📗 **Bổ sung từ:** Mastering the FreeRTOS Kernel - Richard Barry (Preface + Chapter 1)
+
+### <span style="color:#1abc9c">11.1 Các tính năng chính của FreeRTOS</span>
+
+FreeRTOS cung cấp một tập hợp các tính năng phong phú, đáp ứng nhu cầu của hầu hết các ứng dụng nhúng:
+
+- Hoạt động ưu tiên ngắt (Pre-emptive) hoặc hợp tác (co-operative).
+- Gán mức ưu tiên task rất linh hoạt (Very flexible task priority assignment).
+- Cơ chế thông báo task (task notification) linh hoạt, nhanh và nhẹ.
+- Hỗ trợ Queues, Binary semaphores, Counting semaphores, Mutexes, và Recursive Mutexes.
+- Có Software timers và Event groups.
+- Hỗ trợ các hàm callback (Tick hook functions, Idle hook callback function).
+- Tính năng kiểm tra tràn stack (Stack overflow checking).
+- Ghi nhận dấu vết (Trace recording) và thu thập thống kê thời gian chạy task.
+- Mô hình lồng ngắt hoàn chỉnh (Full interrupt nesting model) trên một số kiến trúc.
+- Tính năng Tick-less cho các ứng dụng yêu cầu tiêu thụ điện năng cực thấp (extreme low power).
+- Quản lý stack ngắt bằng phần mềm khi cần (để tiết kiệm RAM).
+- Tuỳ chọn cấp phép thương mại và hỗ trợ chuyên nghiệp (thông qua OpenRTOS).
+- Cung cấp công cụ mô phỏng/phát triển miễn phí và đầy đủ tính năng trên Windows (FreeRTOS simulator).
+
+### <span style="color:#1abc9c">11.2 Hệ sinh thái cấp phép FreeRTOS (Licensing Ecosystem)</span>
+
+| Phiên bản | Đặc điểm cấp phép |
+|-----------|-------------------|
+| **FreeRTOS** | - Miễn phí, mã nguồn mở (MIT license).<br>- Phù hợp cho cả thương mại và sở thích cá nhân.<br>- Không có bảo hành hay hỗ trợ từ Real Time Engineers Ltd. |
+| **OpenRTOS** | - Cấp phép thương mại từ WITTENSTEIN.<br>- Chung mã nguồn với FreeRTOS.<br>- Loại bỏ yêu cầu ghi nhận nguồn gốc của GPL/MIT.<br>- Bao gồm hỗ trợ chuyên nghiệp và bảo hành.<br>- Dành cho các công ty cần bảo đảm pháp lý. |
+| **SafeRTOS** | - Dựa trên FreeRTOS nhưng được phát triển độc lập.<br>- Chứng nhận IEC 61508 SIL 3 (pre-certified).<br>- Dành cho các ứng dụng yêu cầu an toàn tính mạng nghiêm ngặt (safety-critical).<br>- Phát triển bằng phương pháp hình thức (formal methods).<br>- API bị khóa (không thay đổi cấu hình động).<br>- Được tích hợp sẵn trong ROM của một số MCU (ví dụ: TI Stellaris). |
+
+### <span style="color:#1abc9c">11.3 Cấu trúc phân phối FreeRTOS</span>
+
+> [!TIP]
+> Cấu trúc thư mục của FreeRTOS được thiết kế rất tối giản để dễ dàng tích hợp vào project.
+
+Chỉ có hai thư mục cấp cao nhất:
+1. `FreeRTOS/` - Chứa mã nguồn kernel và các ứng dụng demo.
+2. `FreeRTOS-Plus/` - Chứa các thành phần mở rộng trong hệ sinh thái và demo tương ứng.
+
+#### <span style="color:#3498db">Các file mã nguồn cốt lõi (Core source files):</span>
+Nằm trong `FreeRTOS/Source/`:
+- `tasks.c` (Luôn luôn cần thiết)
+- `queue.c` (Luôn luôn cần thiết)
+- `list.c` (Luôn luôn cần thiết)
+- `timers.c` (Chỉ cần nếu sử dụng software timers)
+- `event_groups.c` (Chỉ cần nếu sử dụng event groups)
+- `croutine.c` (Đã deprecated, không còn được khuyến nghị sử dụng)
+
+#### <span style="color:#3498db">Lớp giao tiếp phần cứng (Portable layer):</span>
+Nằm trong `FreeRTOS/Source/portable/[compiler]/[architecture]/`:
+- `port.c` - Chứa mã scheduler đặc thù cho từng kiến trúc.
+- `portmacro.h` - Định nghĩa các kiểu dữ liệu đặc thù của kiến trúc.
+- `MemMang/` - Chứa 5 phương pháp cấp phát bộ nhớ heap (`heap_1.c` đến `heap_5.c`).
+
+#### <span style="color:#3498db">Sơ đồ yêu cầu build tối thiểu:</span>
+```text
+Project includes:
+├── FreeRTOS/Source/tasks.c
+├── FreeRTOS/Source/queue.c
+├── FreeRTOS/Source/list.c
+├── FreeRTOS/Source/portable/[compiler]/[arch]/port.c
+├── FreeRTOS/Source/portable/MemMang/heap_x.c
+└── FreeRTOSConfig.h (project-specific)
+```
+
+### <span style="color:#1abc9c">11.4 Quy ước đặt tên và Coding Style của FreeRTOS</span>
+
+> [!IMPORTANT]
+> Nắm vững quy ước đặt tên này là **chìa khóa** để đọc hiểu mã nguồn FreeRTOS.
+
+#### <span style="color:#3498db">Tiền tố tên biến (Variable Naming Prefixes):</span>
+| Tiền tố | Kiểu dữ liệu | Ví dụ |
+|---|---|---|
+| `c` | `char` | `cCharacter` |
+| `s` | `int16_t` (short) | `sShortValue` |
+| `l` | `int32_t` (long) | `lLongValue` |
+| `x` | `BaseType_t`, `TickType_t`, hoặc các kiểu cấu trúc không chuẩn | `xStatus`, `xTickCount` |
+| `u` | `unsigned` (thường kết hợp) | `ucByte` (unsigned char) |
+| `p` | pointer (con trỏ) | `pcString` (pointer to char) |
+
+#### <span style="color:#3498db">Quy ước đặt tên hàm (Function Naming Convention):</span>
+Cú pháp: `[tiền_tố_kiểu_trả_về][tên_file_nguồn]_[TênHàm]`
+
+Ví dụ:
+- `vTaskPrioritySet()` → Trả về `void` (`v`), định nghĩa trong `tasks.c` (`Task`).
+- `xQueueReceive()` → Trả về `BaseType_t` (`x`), định nghĩa trong `queue.c` (`Queue`).
+- `pvTimerGetTimerID()` → Trả về pointer to void (`pv`), định nghĩa trong `timers.c` (`Timer`).
+
+> [!NOTE]
+> Các hàm cục bộ trong file (private functions) sẽ có tiền tố `prv` (ví dụ: `prvIdleTask`).
+
+#### <span style="color:#3498db">Quy ước đặt tên Macro:</span>
+- Viết in hoa toàn bộ, được tiền tố bởi module định nghĩa nó.
+- `portMAX_DELAY` → Định nghĩa trong portable layer.
+- `taskENTER_CRITICAL` → Định nghĩa trong `task.h`.
+- `pdTRUE`, `pdFALSE`, `pdPASS`, `pdFAIL` → Định nghĩa trong `projdefs.h`.
+- `configUSE_PREEMPTION` → Định nghĩa trong `FreeRTOSConfig.h`.
+- `errQUEUE_FULL` → Định nghĩa trong `projdefs.h`.
+
+#### <span style="color:#3498db">Các định nghĩa kiểu dữ liệu phổ biến:</span>
+- `TickType_t`: Là `uint16_t` hoặc `uint32_t` (tùy thuộc vào `configUSE_16_BIT_TICKS`).
+- `BaseType_t`: Kiểu dữ liệu hiệu quả nhất cho kiến trúc (ví dụ: 32-bit trên ARM là `int32_t`).
+- `portTickType`: Tên cũ của `TickType_t` (vẫn còn xuất hiện trong các codebase cũ).
+
+### <span style="color:#1abc9c">11.5 Vai trò của FreeRTOSConfig.h</span>
+
+- **BẮT BUỘC:** Mỗi ứng dụng sử dụng FreeRTOS đều phải có file `FreeRTOSConfig.h` riêng.
+- Chứa các hằng số cấu hình cụ thể cho ứng dụng để điều chỉnh hành vi của kernel.
+- File này phải nằm trong include path của compiler.
+
+**Các danh mục cấu hình chính:**
+1. **Scheduling (Lập lịch):** `configUSE_PREEMPTION`, `configUSE_TIME_SLICING`
+2. **Timing (Thời gian):** `configTICK_RATE_HZ`, `configCPU_CLOCK_HZ`
+3. **Memory (Bộ nhớ):** `configTOTAL_HEAP_SIZE`, `configMINIMAL_STACK_SIZE`
+4. **Features (Tính năng):** `configUSE_MUTEXES`, `configUSE_COUNTING_SEMAPHORES`, `configUSE_TIMERS`
+5. **Debug (Kiểm lỗi):** `configCHECK_FOR_STACK_OVERFLOW`, `configUSE_TRACE_FACILITY`
+6. **API Inclusion (Bật/tắt API):** `INCLUDE_vTaskDelete`, `INCLUDE_vTaskDelay`, v.v.
+
+---
+
+## <span style="color:#e67e22">12. Câu hỏi ôn tập (từ sách)</span>
 
 1. Hệ thống real-time có **luôn cần phải cực nhanh** không?
    > → **Không.** Real-time = deterministic, không phải fast. Ví dụ mỏ hàn chỉ cần 5 Hz.

@@ -1,5 +1,35 @@
 # <span style="color:#f1c40f">Chương 9: Truyền thông giữa các Task (Intertask Communication)</span>
 
+```text
+📦 MỤC LỤC
+┣ 📂 1. Truyền dữ liệu qua Queue bằng Giá trị
+┃ ┣ 📜 1.1 Truyền 1 Byte bằng Giá trị
+┃ ┣ 📜 1.2 Truyền Kiểu dữ liệu Phức hợp bằng Giá trị
+┃ ┗ 📜 1.3 Phân tích Tác động của Queue tới Thứ tự Thực thi & Độ ưu tiên
+┣ 📂 2. Truyền dữ liệu qua Queue bằng Tham chiếu
+┃ ┣ 📜 2.1 Khi nào nên truyền bằng Tham chiếu?
+┃ ┣ 📜 2.2 So sánh Truyền bằng Giá trị vs Truyền bằng Tham chiếu
+┃ ┣ 📜 2.3 Mã nguồn Thực tế Truyền Con trỏ
+┃ ┗ 📜 2.4 Cạm bẫy & Quy tắc Vàng khi Truyền bằng Tham chiếu
+┣ 📂 3. Thông báo Trực tiếp đến Task — Direct Task Notifications
+┃ ┣ 📜 3.1 Khái niệm & Ưu điểm vượt trội của Direct Task Notifications
+┃ ┣ 📜 3.2 Truyền dữ liệu đơn giản bằng Task Notifications
+┃ ┣ 📜 3.3 Các Chế độ Hoạt động của Task Notification (eNotifyAction)
+┃ ┗ 📜 3.4 Bảng so sánh Trực quan: Direct Task Notifications vs Queues vs Semaphores
+┣ 📂 4. Tổng kết & Câu hỏi Ôn tập — Summary & Review Questions
+┃ ┣ 📜 4.1 Bảng tổng hợp các API trong Chương 9
+┃ ┗ 📜 4.2 Đáp án Câu hỏi Ôn tập từ Sách
+┗ 📂 5. Thông Báo Tác Vụ chuyên sâu (Task Notifications In-Depth)
+  ┣ 📜 5.1 Kiến trúc Cốt lõi (Core Architecture)
+  ┣ 📜 5.2 Lợi ích Hiệu suất (Performance Benefits)
+  ┣ 📜 5.3 5 Giới hạn Cốt lõi (5 Limitations)
+  ┣ 📜 5.4 Tham chiếu API Hoàn chỉnh (Complete API Reference)
+  ┣ 📜 5.5 Các Mẫu Thay thế (Replacement Patterns)
+  ┣ 📜 5.6 Ví dụ Driver Thực tế (Real-World Driver Examples)
+  ┣ 📜 5.7 Bảng So sánh Toàn diện (Comprehensive Comparison Table)
+  ┗ 📜 5.8 Các Thực hành Tốt nhất (Best Practices)
+```
+
 ---
 
 ## <span style="color:#e67e22">1. Truyền dữ liệu qua Queue bằng Giá trị — Passing Data through Queues by Value</span>
@@ -554,3 +584,231 @@ Khi gọi hàm `xTaskNotify(xTaskToNotify, ulValue, eAction)`, tham số `eActio
 > 1. **Tốc độ thực thi nhanh hơn từ 25% đến 45%**.
 > 2. **Không tốn tài nguyên RAM overhead** (vì tận dụng giá trị sẵn có trong TCB của Task nhận).
 > 3. Cung cấp các chế độ thao tác Bitwise (`eSetBits`), Tăng giá trị (`eIncrement`), hoặc Ghi đè (`eSetValueWithOverwrite`) rất linh hoạt.
+
+---
+
+## <span style="color:#e67e22">5. Thông Báo Tác Vụ chuyên sâu (Task Notifications In-Depth)</span>
+
+### <span style="color:#1abc9c">5.1 Kiến trúc Cốt lõi (Core Architecture)</span>
+- Mô hình truyền thông trực tiếp đến Task (không qua đối tượng trung gian).
+- Mỗi Task có 2 trường tích hợp sẵn trong TCB: **Notification State** (Pending/Not-Pending) và **Notification Value** (`uint32_t`).
+- Cấu hình kích hoạt: `configUSE_TASK_NOTIFICATIONS = 1`
+- Dung lượng: Tốn 8 bytes RAM cho mỗi Task (so với 70-80+ bytes cho một Queue).
+
+### <span style="color:#1abc9c">5.2 Lợi ích Hiệu suất (Performance Benefits)</span>
+- Nhanh hơn đáng kể so với queues/semaphores (đường dẫn mã nguồn tối giản, không cần duyệt danh sách liên kết).
+- Hoàn toàn **không cần cấp phát bộ nhớ động (Zero dynamic allocation)**.
+- Các Task sẵn sàng nhận thông báo ngay lập tức khi vừa được tạo ra.
+
+### <span style="color:#1abc9c">5.3 5 Giới hạn Cốt lõi (5 Limitations)</span>
+> [!IMPORTANT]
+> Cần lưu ý 5 hạn chế sau khi sử dụng Task Notifications:
+1. **Không thể gửi đến ISR**: ISR không có TCB (Task Control Block).
+2. **Không thể có nhiều Task nhận**: Chỉ giới hạn chặt chẽ gửi cho 1 Task.
+3. **Không thể đệm nhiều mục dữ liệu**: Chỉ có duy nhất một giá trị `uint32_t`.
+4. **Không thể phát sóng (broadcast)**: Không gửi được cho nhiều Task cùng lúc.
+5. **Không thể block (chờ) khi gửi**: Task gửi không thể chờ cho đến khi gửi xong (chỉ Task nhận mới có thể block để chờ nhận).
+
+### <span style="color:#1abc9c">5.4 Tham chiếu API Hoàn chỉnh (Complete API Reference)</span>
+
+#### <span style="color:#3498db">▸ API Give/Take Cơ bản (Lightweight Semaphore Replacement)</span>
+1. `xTaskNotifyGive(xTaskToNotify)`: Luôn trả về `pdPASS`, tăng giá trị notification lên 1.
+2. `vTaskNotifyGiveFromISR(xTaskToNotify, pxHigherPriorityTaskWoken)`: Phiên bản an toàn trong ngắt (ISR-safe).
+3. `ulTaskNotifyTake(xClearCountOnExit, xTicksToWait)`:
+   - `xClearCountOnExit = pdTRUE`: Hoạt động như Binary Semaphore (xóa giá trị về 0 sau khi đọc).
+   - `xClearCountOnExit = pdFALSE`: Hoạt động như Counting Semaphore (giảm giá trị đi 1 sau khi đọc).
+   - **Trả về**: Giá trị notification trước khi bị xóa/giảm.
+
+#### <span style="color:#3498db">▸ API Đầy đủ Tính năng (Full-Featured APIs)</span>
+4. `xTaskNotify(xTaskToNotify, ulValue, eAction)` với 5 chế độ `eNotifyAction`:
+   - `eNoAction`: Chỉ thiết lập trạng thái thành Pending (Binary Semaphore siêu nhẹ).
+   - `eSetBits`: `val |= ulValue` (Event Group siêu nhẹ).
+   - `eIncrement`: `val++` (Counting Semaphore siêu nhẹ).
+   - `eSetValueWithoutOverwrite`: Ghi nếu chưa Pending, trả về `pdFAIL` nếu đang Pending (Queue 1 phần tử).
+   - `eSetValueWithOverwrite`: Luôn luôn ghi đè (Mailbox).
+5. `xTaskNotifyFromISR()`: Phiên bản an toàn trong ngắt (ISR-safe).
+6. `xTaskNotifyWait(ulBitsToClearOnEntry, ulBitsToClearOnExit, pulNotificationValue, xTicksToWait)`:
+   - `ulBitsToClearOnEntry`: Các bit cần xóa khi bắt đầu chờ (`0xFFFFFFFF` để xóa toàn bộ).
+   - `ulBitsToClearOnExit`: Các bit cần xóa sau khi nhận được thông báo.
+   - `pulNotificationValue`: Biến lưu trữ giá trị trước khi bị xóa ở bước exit.
+7. `xTaskNotifyStateClear(xTask)`: Chuyển trạng thái từ Pending sang Not-Pending mà không làm thay đổi giá trị.
+
+### <span style="color:#1abc9c">5.5 Các Mẫu Thay thế (Replacement Patterns)</span>
+
+| Đối tượng RTOS (RTOS Object) | Cấu hình Notification Tương đương | API Gửi (Send API) | API Nhận (Receive API) | Ghi chú (Notes) |
+|---|---|---|---|---|
+| Binary Semaphore | Give/Take với clear | `xTaskNotifyGive` | `ulTaskNotifyTake(pdTRUE, ...)` | Đồng bộ hóa nhanh nhất (Fastest sync) |
+| Counting Semaphore | Give/Take với decrement | `xTaskNotifyGive` | `ulTaskNotifyTake(pdFALSE, ...)` | Đếm số sự kiện (Count events) |
+| Event Group | SetBits / WaitBits | `xTaskNotify(..., eSetBits)` | `xTaskNotifyWait(0, mask, ...)` | Cờ 32-bit (32-bit flags) |
+| Mailbox | Ghi đè (Overwrite) | `xTaskNotify(..., eSetValueWithOverwrite)` | `xTaskNotifyWait(...)` | Giá trị mới nhất (Latest value) |
+| Queue 1-Phần tử | Không ghi đè (No overwrite) | `xTaskNotify(..., eSetValueWithoutOverwrite)` | `xTaskNotifyWait(...)` | `pdFAIL` nếu đầy |
+
+### <span style="color:#1abc9c">5.6 Ví dụ Driver Thực tế (Real-World Driver Examples)</span>
+
+#### <span style="color:#3498db">▸ 1. Driver Truyền UART (UART Transmit Driver - Listing 155 pattern)</span>
+```c
+// 📗 Nguồn: Mastering the FreeRTOS Real Time Kernel - Richard Barry
+static TaskHandle_t xTaskToNotify = NULL;
+
+void xUART_Send(uint8_t *pData, uint16_t length)
+{
+    // 1. Lưu lại handle của Task hiện tại đang gọi hàm này
+    xTaskToNotify = xTaskGetCurrentTaskHandle();
+    
+    // 2. Xóa các thông báo cũ (stale notification) trước khi truyền
+    ulTaskNotifyTake(pdTRUE, 0);
+    
+    // 3. Kích hoạt phần cứng UART TX
+    HAL_UART_Transmit_IT(&huart1, pData, length);
+    
+    // 4. Block để chờ ngắt báo xong (timeout max)
+    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
+}
+
+void xUART_TransmitEndISR(void)
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    
+    // Gửi thông báo đến Task đã lưu
+    // Lưu ý: Việc ghi con trỏ 32-bit là atomic trên CPU 32-bit
+    if(xTaskToNotify != NULL)
+    {
+        vTaskNotifyGiveFromISR(xTaskToNotify, &xHigherPriorityTaskWoken);
+        portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+    }
+}
+```
+
+#### <span style="color:#3498db">▸ 2. Driver Nhận UART (UART Receive Driver - Listing 156 pattern)</span>
+```c
+// 📗 Nguồn: Mastering the FreeRTOS Real Time Kernel - Richard Barry
+void vUART_ReceiveTask(void *pvParameters)
+{
+    TimeOut_t xTimeOut;
+    TickType_t xTicksToWait = pdMS_TO_TICKS(500); // Đợi tối đa 500ms
+    
+    while(1)
+    {
+        // Khởi tạo trạng thái timeout ban đầu
+        vTaskSetTimeOutState(&xTimeOut);
+        
+        // Vòng lặp chờ nhận đủ số byte yêu cầu (REQUIRED_BYTES)
+        while(BytesReceived() < REQUIRED_BYTES)
+        {
+            // Kiểm tra xem đã hết timeout chưa?
+            if(xTaskCheckForTimeOut(&xTimeOut, &xTicksToWait) != pdFALSE)
+            {
+                // Đã bị timeout, xử lý lỗi tại đây
+                break;
+            }
+            // Block chờ thêm byte mới (với thời gian chờ còn lại)
+            ulTaskNotifyTake(pdTRUE, xTicksToWait);
+        }
+        
+        // Xử lý dữ liệu nhận được sau vòng lặp...
+    }
+}
+```
+
+#### <span style="color:#3498db">▸ 3. Driver Chuyển đổi ADC (ADC Conversion Driver - Listing 157 pattern)</span>
+```c
+// 📗 Nguồn: Mastering the FreeRTOS Real Time Kernel - Richard Barry
+void vADC_ISR(void)
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    uint32_t ulConversionResult = ADC_ReadData(); // Đọc kết quả ADC
+    
+    // Gửi giá trị ADC, không ghi đè nếu Task chưa kịp đọc
+    xTaskNotifyFromISR(xADCTaskHandle, 
+                       ulConversionResult, 
+                       eSetValueWithoutOverwrite, 
+                       &xHigherPriorityTaskWoken);
+                       
+    // Yêu cầu chuyển đổi ngữ cảnh nếu cần
+    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+}
+
+void vADC_ProcessingTask(void *pvParameters)
+{
+    uint32_t ulADCValue;
+    while(1)
+    {
+        // Chờ nhận thông báo, lưu vào ulADCValue, không xóa bit nào lúc vào và ra
+        if(xTaskNotifyWait(0, 0, &ulADCValue, portMAX_DELAY) == pdPASS)
+        {
+            // Xử lý giá trị ulADCValue thành công
+        }
+    }
+}
+```
+
+#### <span style="color:#3498db">▸ 4. Giao tiếp Server Cloud (Cloud Server Communication - Listing 158-162 pattern)</span>
+Mô hình: Yêu cầu gửi qua Queue (Nhiều clients → 1 server task), Phản hồi thông qua Task Notification (Server → Task client cụ thể).
+
+```c
+// 📗 Nguồn: Mastering the FreeRTOS Real Time Kernel - Richard Barry
+#define SEND_SUCCESSFUL_BIT       ( 1UL << 0 ) // Bit 0 báo thành công
+#define OPERATION_TIMED_OUT_BIT   ( 1UL << 1 ) // Bit 1 báo timeout
+
+// Phía Client:
+void vCloudClientTask(void *pvParameters)
+{
+    CloudRequest_t xRequest;
+    uint32_t ulStatusFlags;
+    
+    // Đóng gói request cùng handle của client này
+    xRequest.xClientHandle = xTaskGetCurrentTaskHandle();
+    xRequest.pData = myData;
+    
+    // Gửi yêu cầu qua Queue chung
+    xQueueSend(xCloudQueue, &xRequest, portMAX_DELAY);
+    
+    // Chờ cờ trạng thái phản hồi từ Server (dùng eSetBits pattern)
+    // Sẽ xóa các bit này lúc thoát
+    xTaskNotifyWait(0, (SEND_SUCCESSFUL_BIT | OPERATION_TIMED_OUT_BIT), 
+                    &ulStatusFlags, pdMS_TO_TICKS(5000));
+}
+
+// Phía Server (CloudWrite):
+void vCloudServerTask(void *pvParameters)
+{
+    CloudRequest_t xRequest;
+    while(1)
+    {
+        // Chờ nhận yêu cầu từ Queue
+        xQueueReceive(xCloudQueue, &xRequest, portMAX_DELAY);
+        
+        // Thực hiện kết nối mạng, gửi dữ liệu lên Cloud...
+        
+        // Gửi trả status cho đúng Client đã request bằng eSetBits
+        xTaskNotify(xRequest.xClientHandle, 
+                    SEND_SUCCESSFUL_BIT, 
+                    eSetBits);
+    }
+}
+```
+
+### <span style="color:#1abc9c">5.7 Bảng So sánh Toàn diện (Comprehensive Comparison Table)</span>
+
+| Tính năng | Task Notifications | FreeRTOS Queues | Semaphores | Event Groups |
+|---|---|---|---|---|
+| **Tốc độ (Speed)** | Nhanh nhất (Fastest) | Chậm nhất (Slowest) | Nhanh (Fast) | Trung bình (Medium) |
+| **Tiêu thụ RAM** | 8 Bytes (Sẵn có trong TCB) | Cao (Tùy số lượng/kích thước) | Trung bình | Thấp / Trung bình |
+| **Khởi tạo (Creation)** | Không cần (Zero-init) | Bắt buộc (`xQueueCreate`) | Bắt buộc (`xSemaphoreCreate`) | Bắt buộc (`xEventGroupCreate`) |
+| **Số Task gửi (Senders)** | Nhiều (Multiple) | Nhiều (Multiple) | Nhiều (Multiple) | Nhiều (Multiple) |
+| **Số Task nhận (Receivers)** | **Chỉ 1 Task chỉ định** | Nhiều (Multiple) | Nhiều (Multiple) | Nhiều (Multiple) |
+| **Phát sóng (Broadcast)** | ❌ Không hỗ trợ | ❌ Không hỗ trợ | ❌ Không hỗ trợ | ✅ Có hỗ trợ |
+| **Khả năng đệm (Buffering)**| ❌ Chỉ 1 giá trị 32-bit | ✅ Hỗ trợ đệm nhiều phần tử | ❌ Không / Tối đa = max count | ❌ Không hỗ trợ |
+| **Gửi từ ngắt (ISR Support)**| ✅ Hỗ trợ (`*FromISR`) | ✅ Hỗ trợ | ✅ Hỗ trợ | ✅ Hỗ trợ |
+| **Priority Inheritance** | ❌ Không hỗ trợ | ❌ Không hỗ trợ | ✅ Chỉ Mutex | ❌ Không hỗ trợ |
+
+### <span style="color:#1abc9c">5.8 Các Thực hành Tốt nhất (Best Practices)</span>
+> [!TIP]
+> - **Sử dụng làm mặc định (DEFAULT)** cho việc đồng bộ 1-1 (luôn ưu tiên thay vì dùng semaphores).
+> - Chỉ **chuyển sang Queues/Semaphores** khi Task Notifications chạm tới các giới hạn (ví dụ: cần nhiều task nhận, hoặc cần đệm lượng dữ liệu lớn).
+> - **Xóa các thông báo cũ (stale notifications)** trước khi block chờ một sự kiện mới để tránh lấy sai tín hiệu cũ: `ulTaskNotifyTake(pdTRUE, 0)`.
+> - **Sử dụng timeout có giới hạn** để phát hiện lỗi trong các mô hình driver (tránh việc chờ vô tận).
+
+---
+
+[⬅️ Chương trước: Chương 8](#) | [Chương tiếp theo: Chương 10 ➡️](#)

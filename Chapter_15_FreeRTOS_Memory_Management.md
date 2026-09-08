@@ -104,6 +104,17 @@ _Min_Stack_Size = 0x400;   /* 1024 bytes — Main Stack (MSP) */
 > [!WARNING]
 > **Đừng nhầm 2 heap**: `malloc()` của C dùng C Heap (linker script). `pvPortMalloc()` của FreeRTOS dùng FreeRTOS Heap (`configTOTAL_HEAP_SIZE`). Chúng là **2 vùng nhớ hoàn toàn riêng biệt**.
 
+> [!NOTE]
+> 📗 **Bổ sung từ: Mastering the FreeRTOS Kernel - Richard Barry**
+> #### <span style="color:#3498db">Tại sao không dùng hàm `malloc()`/`free()` tiêu chuẩn? (7 Lý do)</span>
+> 1. Không phải lúc nào cũng có sẵn trên các hệ thống bare-metal (nhúng cơ bản).
+> 2. Kích thước code (code size) thường khá lớn.
+> 3. Hiếm khi **thread-safe** (an toàn khi chạy đa luồng).
+> 4. Thời gian thực thi không xác định (non-deterministic), không thể dự đoán được thời gian chạy.
+> 5. Gây ra hiện tượng phân mảnh bộ nhớ (Fragmentation).
+> 6. Làm phức tạp hóa các linker scripts.
+> 7. Khó debug (có thể xảy ra tình trạng heap phát triển đè lên các biến khác nếu không cẩn thận).
+
 ---
 
 ### <span style="color:#1abc9c">1.4 Heap Fragmentation — Phân mảnh Heap</span>
@@ -248,54 +259,89 @@ assert_param(ledCmdQueue != NULL);
 
 ## <span style="color:#e67e22">3. So sánh 5 Heap Implementations — Comparing FreeRTOS Heaps</span>
 
-Tất cả nằm trong `portable/MemMang/`:
+> [!NOTE]
+> 📗 **Bổ sung từ: Mastering the FreeRTOS Kernel - Richard Barry**
+> #### <span style="color:#3498db">FreeRTOS Portable Layer Architecture</span>
+> * FreeRTOS thay thế `malloc()` bằng `pvPortMalloc()` và `free()` bằng `vPortFree()`.
+> * Việc cấp phát bộ nhớ được thực hiện ở **PORTABLE LAYER** (không phải trong kernel core).
+> * Có 5 file triển khai sẵn trong thư mục `FreeRTOS/Source/portable/MemMang/`.
 
 ### <span style="color:#1abc9c">3.1 Chi tiết từng Heap</span>
 
-#### <span style="color:#3498db">`heap_1.c` — Chỉ Cấp phát, Không Giải phóng</span>
+#### <span style="color:#3498db">`heap_1.c` — Bump Pointer (Chỉ Cấp phát, Không Giải phóng)</span>
 
-* Cấp phát từ mảng tĩnh `ucHeap[]`.
-* `vPortFree()` **không làm gì** (stub).
-* ⚡ Cực nhanh và deterministic.
-* ✅ Lý tưởng cho hệ thống **safety-critical** — tạo tất cả Task/Queue lúc init, **không bao giờ xóa**.
+* 📗 **Bổ sung từ: Mastering the FreeRTOS Kernel - Richard Barry**: Thuật toán sử dụng một sequential bump pointer, đảm bảo căn lề byte (aligns to byte boundary).
+* Cấp phát từ mảng tĩnh `ucHeap[]` có kích thước `configTOTAL_HEAP_SIZE`.
+* `vPortFree()` **không làm gì** (stub) - không hỗ trợ giải phóng.
+* ⚡ 100% deterministic (thời gian cố định) và zero fragmentation (không phân mảnh).
+* **Figure 5 walkthrough**: Stage A (heap trống) → Stage B (tạo 1 task: chứa TCB + Stack) → Stage C (tạo 3 tasks tiếp tục tịnh tiến pointer).
+* ✅ Lý tưởng cho hệ thống **safety-critical** — tất cả đối tượng được tạo trước khi scheduler start, **không bao giờ xóa**.
 
-#### <span style="color:#3498db">`heap_2.c` — Best-Fit, Không Merge</span>
+#### <span style="color:#3498db">`heap_2.c` — Best-Fit (KHÔNG Coalescing)</span>
 
-* Thuật toán **best-fit** cho allocation, cho phép free.
-* **KHÔNG merge** (coalesce) các khối free liền kề.
-* ⚠️ Fragmentation nghiêm trọng nếu alloc/free kích thước khác nhau.
-* ✅ An toàn **chỉ khi** các khối alloc/free có **kích thước giống nhau** (fixed-size pool).
+* 📗 **Bổ sung từ: Mastering the FreeRTOS Kernel - Richard Barry**: **STATUS: Retained for backward compatibility, NOT recommended for new designs → USE heap_4**.
+* Thuật toán: Sử dụng danh sách liên kết (Linked list) các free blocks được sắp xếp theo **SIZE**.
+* Tìm khối trống nhỏ nhất vừa đủ (smallest block >= requested size). Sẽ chia nhỏ khối (splits blocks) nếu lớn hơn mức cần thiết.
+* `vPortFree()` đưa block trở lại free list **NHƯNG KHÔNG** gộp (coalesce) các khối liền kề.
+* ⚠️ **FRAGMENTATION**: Rất nghiêm trọng nếu alloc/free các kích thước khác nhau.
+* ✅ **VALID USE**: Chỉ an toàn khi alloc/free các đối tượng **luôn có kích thước giống hệt nhau** (fixed-size pool).
+* **Figure 6 walkthrough**: Tạo 3 tasks → xóa 1 task → tạo task mới (thuật toán best-fit sẽ tái sử dụng chính xác block vừa bị xóa).
 
-#### <span style="color:#3498db">`heap_3.c` — Wrapper quanh C `malloc()`/`free()`</span>
+#### <span style="color:#3498db">`heap_3.c` — Standard Library Wrapper</span>
 
-* Gọi `malloc()`/`free()` của toolchain C runtime.
-* Thread-safe bằng cách **suspend scheduler** trong quá trình gọi.
-* Kích thước heap = `_Min_Heap_Size` trong linker script (bỏ qua `configTOTAL_HEAP_SIZE`).
+* Wrap trực tiếp `malloc()`/`free()` của toolchain compiler C.
+* 📗 **Bổ sung từ: Mastering the FreeRTOS Kernel - Richard Barry**: Đảm bảo thread safety bằng cách suspend scheduler.
+* **`configTOTAL_HEAP_SIZE` KHÔNG có tác dụng** ở đây. Kích thước heap do linker script quyết định.
+* Hàm `xPortGetFreeHeapSize()` **KHÔNG** được hỗ trợ.
 * ✅ Dùng khi cần tương thích thư viện C dùng `malloc`.
+* Code nội bộ mẫu:
+```c
+void *pvPortMalloc( size_t xWantedSize ) {
+    void *pvReturn;
+    vTaskSuspendAll();         // Thread safety
+    pvReturn = malloc( xWantedSize );
+    ( void ) xTaskResumeAll();
+    return pvReturn;
+}
+```
 
-#### <span style="color:#3498db">`heap_4.c` — First-Fit + Merge khối liền kề ⭐</span>
+#### <span style="color:#3498db">`heap_4.c` — First-Fit WITH Coalescing ⭐</span>
 
-* **Merge** (coalesce) các khối free liền kề khi `vPortFree()` → **chống fragmentation**.
-* Cho phép đặt heap tại **địa chỉ RAM cụ thể**.
-* ⭐ **Lựa chọn tiêu chuẩn** cho hầu hết dự án cần tạo/xóa Task runtime.
+* 📗 **Bổ sung từ: Mastering the FreeRTOS Kernel - Richard Barry**: Thuật toán danh sách liên kết các khối trống sắp xếp theo **ĐỊA CHỈ (ADDRESS)** (không phải theo size). Khối trống đầu tiên đủ lớn (First-Fit) sẽ được chọn.
+* **Coalescing**: Các khối vừa được giải phóng sẽ tự động gộp (merge) với các free blocks liền kề → **chống fragmentation**.
+* **Figure 7 complete walkthrough** (6 stages A→F): Tạo 3 tasks → Xóa task → Cấp phát queue → User alloc → Xóa queue → Xóa user alloc → Khối nhớ fully coalesced (gộp hoàn toàn).
+* Cho phép người dùng tự định nghĩa vùng nhớ: Đặt `configAPPLICATION_ALLOCATED_HEAP = 1`.
+  * User tự khai báo mảng `ucHeap[]` với vị trí mong muốn:
+  * GCC: `uint8_t ucHeap[ size ] __attribute__((section(".my_heap")));`
+  * IAR: `uint8_t ucHeap[ size ] @ 0x20000000;`
+* ⭐ **Lựa chọn tiêu chuẩn** cho hầu hết dự án mới.
 
-#### <span style="color:#3498db">`heap_5.c` — Multi-Region (Giống heap_4 + RAM phân tán)</span>
+#### <span style="color:#3498db">`heap_5.c` — Multi-Region (RAM phân tán)</span>
 
-* Thuật toán giống `heap_4` nhưng hỗ trợ heap trải trên **nhiều vùng RAM không liên tục**.
-* Ví dụ: Internal SRAM (128KB) + External SDRAM (8MB).
-* Phải gọi `vPortDefineHeapRegions()` **TRƯỚC** khi tạo bất kỳ primitive nào.
+* 📗 **Bổ sung từ: Mastering the FreeRTOS Kernel - Richard Barry**: Giống hệt thuật toán của `heap_4` nhưng cho phép heap trải rộng trên **NHIỀU vùng nhớ KHÔNG liên tục** (Multiple non-contiguous memory regions).
+* **BẮT BUỘC** gọi hàm `vPortDefineHeapRegions()` **TRƯỚC KHI** gọi bất kỳ `pvPortMalloc()` nào.
+* Cấu trúc cấu hình `HeapRegion_t`: `{ pucStartAddress, xSizeInBytes }`
+* **STRICT RULES** (Luật bắt buộc):
+  1. Mảng phải được sắp xếp theo **thứ tự địa chỉ bắt đầu tăng dần** (ascending start address).
+  2. Mảng phải được kết thúc bằng phần tử lính canh (sentinel): `{ NULL, 0 }`.
+* **Listing 6 FLAWED approach**: Định nghĩa toàn bộ RAM1 làm heap → Sai lầm vì ghi đè lên linker variables (các biến của C/C++ compiler).
+* **Listing 7 CORRECT approach**: Chỉ định nghĩa phần RAM1 bắt đầu sau các biến (ví dụ: gán `ucHeap[]` trong RAM1) + toàn bộ RAM2 + toàn bộ RAM3.
+  * **Advantages**: Tránh hardcode địa chỉ thủ công, tận dụng Linker để tránh tràn (overflow).
 
 ---
 
-### <span style="color:#1abc9c">3.2 Bảng Ma trận So sánh</span>
+### <span style="color:#1abc9c">3.2 Bảng Ma trận So sánh Toàn diện</span>
 
-| Heap | Thread Safe | Alloc | Free | Merge Free Blocks | Multi-Region | Determinism |
-|:---|:---:|:---:|:---:|:---:|:---:|:---:|
-| **`heap_1.c`** | ✅ | ✅ | ❌ | — | ❌ | ⭐ Cao nhất |
-| **`heap_2.c`** | ✅ | ✅ | ✅ | ❌ | ❌ | ⭐ Cao |
-| **`heap_3.c`** | ✅ | ✅ | ✅ | *(tùy C lib)* | ❌ | ⚠️ Biến đổi |
-| **`heap_4.c`** | ✅ | ✅ | ✅ | ✅ | ❌ | 🔸 Trung bình |
-| **`heap_5.c`** | ✅ | ✅ | ✅ | ✅ | ✅ | 🔸 Trung bình |
+> [!NOTE]
+> 📗 **Bổ sung từ: Mastering the FreeRTOS Kernel - Richard Barry**
+
+| Scheme | Algorithm | Free? | Coalesce? | Deterministic? | Memory Source | Thread Safety | xPortGetFreeHeapSize? | Best Use |
+|:---|:---|:---:|:---:|:---:|:---|:---:|:---:|:---|
+| **`heap_1`** | Bump Pointer | ❌ | ❌ | ✅ 100% | `ucHeap[]` tĩnh (`configTOTAL_HEAP_SIZE`) | ✅ | ✅ | Safety-critical, alloc once. |
+| **`heap_2`** | Best-Fit | ✅ | ❌ | Tương đối | `ucHeap[]` tĩnh (`configTOTAL_HEAP_SIZE`) | ✅ | ✅ | Backward compatibility, cùng fixed size. |
+| **`heap_3`** | Wrapper (`malloc`) | ✅ | *(Tùy)* | ❌ Không | Compiler / Linker C Heap | ✅ (Suspend All) | ❌ Không | Tương thích legacy C lib. |
+| **`heap_4`** | First-Fit (by address) | ✅ | ✅ Có | Không (nhanh hơn heap_3) | `ucHeap[]` tĩnh (`configTOTAL_HEAP_SIZE`) | ✅ | ✅ | Tiêu chuẩn cho dự án mới. |
+| **`heap_5`** | First-Fit (multi-region)| ✅ | ✅ Có | Không | Nhiều vùng nhớ rời rạc cấu hình bởi user | ✅ | ✅ | Hệ thống có nhiều RAM rời (SDRAM). |
 
 > [!TIP]
 > **Quy tắc chọn nhanh**:
@@ -430,11 +476,14 @@ void vApplicationMallocFailedHook(void)
 
 ### <span style="color:#1abc9c">5.3 API Giám sát Bộ nhớ Runtime</span>
 
-| API | Trả về | Mục đích |
+> [!NOTE]
+> 📗 **Bổ sung từ: Mastering the FreeRTOS Kernel - Richard Barry**
+
+| API | Trả về | Mục đích & Chi tiết |
 |:---|:---|:---|
-| `xPortGetFreeHeapSize()` | `size_t` bytes | Heap trống **hiện tại** (⚠️ không cho biết khối liên tục lớn nhất) |
-| `xPortGetMinimumEverFreeHeapSize()` | `size_t` bytes | Heap trống **thấp nhất từ khi boot** — worst-case watermark |
-| `uxTaskGetStackHighWaterMark(xTask)` | `UBaseType_t` words | Stack còn trống **ít nhất** của 1 Task từ khi tạo |
+| `xPortGetFreeHeapSize()` | `size_t` bytes | Số byte còn trống **hiện tại**. Hỗ trợ mọi heap trừ `heap_3`. ⚠️ **KHÔNG** cho biết thông tin về mức độ phân mảnh (Fragmentation). |
+| `xPortGetMinimumEverFreeHeapSize()` | `size_t` bytes | Heap trống **thấp nhất từ khi boot** (Low-water mark). **CHỈ** hỗ trợ `heap_4` và `heap_5`. Dùng để điều chỉnh (right-size) kích thước `configTOTAL_HEAP_SIZE` cho phù hợp (tránh quá to hoặc quá bé). |
+| `uxTaskGetStackHighWaterMark(xTask)` | `UBaseType_t` words | Stack còn trống **ít nhất** của 1 Task từ khi tạo. Dùng để xem Task có sắp bị tràn stack hay không. |
 
 > [!TIP]
 > **Quy tắc thực hành**:
@@ -515,14 +564,15 @@ __privileged_data_end__
 
 ### <span style="color:#1abc9c">7.2 Bảng Tổng hợp Config Macros</span>
 
-| Macro | Giá trị | Mục đích |
-|:---|:---|:---|
-| `configTOTAL_HEAP_SIZE` | `((size_t)15360)` | Kích thước FreeRTOS Heap (bytes) |
-| `configSUPPORT_DYNAMIC_ALLOCATION` | `0` / `1` | Bật/tắt `xTaskCreate`, `xQueueCreate` |
-| `configSUPPORT_STATIC_ALLOCATION` | `0` / `1` | Bật/tắt `xTaskCreateStatic`, `xQueueCreateStatic` |
-| `configCHECK_FOR_STACK_OVERFLOW` | `1` / `2` | Method 1 (SP check) / Method 2 (watermark) |
-| `configUSE_MALLOC_FAILED_HOOK` | `1` | Gọi hook khi `pvPortMalloc()` fail |
-| `configUSE_NEWLIB_REENTRANT` | `1` | Cấp re-entrancy struct riêng mỗi Task |
+| Macro | Giá trị mặc định | Dùng bởi Heap | Mục đích (📗 Bổ sung từ Richard Barry) |
+|:---|:---|:---|:---|
+| `configSUPPORT_DYNAMIC_ALLOCATION` | `1` | All | Cho phép cấp phát động, bật `xTaskCreate` / `xQueueCreate`. |
+| `configTOTAL_HEAP_SIZE` | `((size_t)15360)` | `heap_1`, `2`, `4`, `5` | Kích thước của mảng tĩnh `ucHeap[]`. |
+| `configAPPLICATION_ALLOCATED_HEAP` | `0` | `heap_4` | Cho phép User tự đặt mảng `ucHeap[]` tại vùng RAM đặc biệt bằng thuộc tính Linker. |
+| `configUSE_MALLOC_FAILED_HOOK` | `0` (nên bật `1`)| All | Bật tính năng gọi callback báo lỗi (fail callback) khi `pvPortMalloc` trả về `NULL`. |
+| `configSUPPORT_STATIC_ALLOCATION` | `0` | Không dùng Heap | Bật/tắt các hàm `xTaskCreateStatic` (Tạo object không cần Heap). |
+| `configCHECK_FOR_STACK_OVERFLOW` | `0` | Kernel | Theo dõi Stack (1 = SP check, 2 = Watermark). |
+| `configUSE_NEWLIB_REENTRANT` | `0` | C Lib | Cấp context re-entrancy riêng cho mỗi Task. |
 
 ---
 

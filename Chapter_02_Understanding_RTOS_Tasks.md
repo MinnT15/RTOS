@@ -11,8 +11,11 @@
  5.  Mô hình lập trình Task          — Pseudo-code, mỗi task = 1 while loop riêng
  6.  Round-Robin Scheduling           — Time slice, fair share, context switch
  7.  Preemptive Scheduling            — Priority-based, task starvation, preemption example
- 8.  So sánh: Super Loop vs RTOS Task — Bảng ưu/nhược điểm toàn diện
- 9.  Câu hỏi ôn tập                  — 7 câu hỏi + đáp án
+ 8.  Quản lý Task Cơ bản (Task Management API) — Tạo, xóa, delay, priority
+ 9.  Scheduling Algorithms Nâng cao   — 4 Modes, priority selection
+ 10. Context Switch & Safety          — Cơ chế 7 bước ARM, Stack Overflow Detection
+ 11. So sánh: Super Loop vs RTOS Task — Bảng ưu/nhược điểm toàn diện
+ 12. Câu hỏi ôn tập                  — 7 câu hỏi + đáp án
  📌  Tóm tắt chương                  — Diagram tổng kết
 ```
 
@@ -1019,34 +1022,25 @@ TASK A đang chạy                                    TASK B bắt đầu chạ
 ─────────────────                                    ─────────────────
       │                                                    ▲
       ▼                                                    │
-┌─────────────────── Context Switch ───────────────────────┐
-│                                                          │
-│  1. SysTick Interrupt fire (mỗi 1ms)                     │
-│     ↓                                                    │
-│  2. SAVE context Task A:                                 │
-│     ┌──────────────────────────────────┐                 │
-│     │ Push lên STACK của Task A:       │                 │
-│     │   R0-R3, R12     (hardware tự push)│               │
-│     │   LR, PC, xPSR  (hardware tự push)│               │
-│     │   R4-R11         (software push) │                 │
-│     │   Saved SP → TCB của Task A      │                 │
-│     └──────────────────────────────────┘                 │
-│     ↓                                                    │
-│  3. Scheduler chọn Task B (task tiếp theo trong danh sách)│
-│     ↓                                                    │
-│  4. RESTORE context Task B:                              │
-│     ┌──────────────────────────────────┐                 │
-│     │ Đọc SP từ TCB của Task B         │                 │
-│     │ Pop từ STACK của Task B:         │                 │
-│     │   R4-R11         (software pop)  │                 │
-│     │   R0-R3, R12     (hardware pop)  │                 │
-│     │   LR, PC, xPSR  (hardware pop)  │                 │
-│     └──────────────────────────────────┘                 │
-│     ↓                                                    │
-│  5. CPU nhảy vào PC (Program Counter) của Task B         │
-│     → Task B tiếp tục chạy TỪ CHỖ BỊ DỪNG lần trước    │
-│                                                          │
-└──────────────────────────────────────────────────────────┘
+┌─────────────────── Context Switch (7 bước ARM Cortex-M) ──────────┐
+│ 📗 Bổ sung từ: Mastering the FreeRTOS Kernel - Richard Barry      │
+│                                                                   │
+│  1. Exception entry: HW tự động push R0-R3, R12, LR, PC, xPSR     │
+│     lên stack của task hiện tại.                                  │
+│     ↓                                                             │
+│  2. SW (OS) push R4-R11 (+ FPU registers nếu có) lên stack.       │
+│     ↓                                                             │
+│  3. SP hiện tại được save vào pxCurrentTCB->pxTopOfStack.         │
+│     ↓                                                             │
+│  4. Scheduler (vTaskSwitchContext) chọn new pxCurrentTCB.         │
+│     ↓                                                             │
+│  5. New SP được load từ pxCurrentTCB->pxTopOfStack.               │
+│     ↓                                                             │
+│  6. SW (OS) pop R4-R11 từ stack mới.                              │
+│     ↓                                                             │
+│  7. Exception return (BX LR đặc biệt): HW tự động restore         │
+│     các register còn lại (R0-R3, R12, LR, PC, xPSR) từ stack.     │
+└───────────────────────────────────────────────────────────────────┘
 ```
 
 > [!NOTE]
@@ -1349,7 +1343,7 @@ graph TD
 
 ---
 
-### <span style="color:#1abc9c">Trạng thái Task trong FreeRTOS:</span>
+### <span style="color:#1abc9c">Trạng thái Task trong FreeRTOS (📗 Bổ sung từ: Mastering the FreeRTOS Kernel - Richard Barry):</span>
 
 ```mermaid
 graph TD
@@ -1511,7 +1505,146 @@ graph TD
 > ```
 
 
-## <span style="color:#e67e22">8. So sánh tổng hợp: Super Loop vs RTOS Task</span>
+
+---
+
+## <span style="color:#e67e22">8. Quản lý Task Cơ bản (Task Management API)</span>
+
+> [!NOTE]
+> 📗 Bổ sung từ: Mastering the FreeRTOS Kernel - Richard Barry
+
+### <span style="color:#1abc9c">8.1 Phân tích chi tiết xTaskCreate()</span>
+
+```c
+BaseType_t xTaskCreate( TaskFunction_t pvTaskCode,
+                        const char * const pcName,
+                        configSTACK_DEPTH_TYPE usStackDepth,
+                        void *pvParameters,
+                        UBaseType_t uxPriority,
+                        TaskHandle_t *pxCreatedTask );
+```
+
+| Parameter | Chi tiết |
+|-----------|----------|
+| `pvTaskCode` | Con trỏ hàm của task (hàm C thông thường, trả về `void`, nhận `void*`). |
+| `pcName` | Chuỗi tên task, chỉ dùng để debug. Độ dài tối đa `configMAX_TASK_NAME_LEN`. |
+| `usStackDepth`| Kích thước stack tính bằng **WORDS**, KHÔNG phải bytes! (VD: trên ARM 32-bit, 100 word = 400 bytes). |
+| `pvParameters`| Con trỏ `void*` truyền tham số vào task. Cho phép tạo **nhiều instance** (nhiều task) từ cùng một hàm C. |
+| `uxPriority`  | Priority từ 0 đến `(configMAX_PRIORITIES - 1)`. Vượt ngưỡng sẽ bị cap (giới hạn) âm thầm. |
+| `pxCreatedTask`| Tuỳ chọn (có thể `NULL`). Lưu Task Handle để sau này thao tác (như xóa, đổi priority). |
+| **Return**    | `pdPASS` nếu tạo thành công, `pdFAIL` (hoặc `errCOULD_NOT_ALLOCATE_REQUIRED_MEMORY`) nếu thiếu Heap. |
+
+### <span style="color:#1abc9c">8.2 xTaskCreateStatic() (Tạo Task không cần Heap)</span>
+
+Từ phiên bản FreeRTOS V9.0.0, bạn có thể tạo task **static memory** hoàn toàn không cần cấp phát động (Heap).
+
+- Yêu cầu: `configSUPPORT_STATIC_ALLOCATION = 1`.
+- Cần tự định nghĩa array stack buffer và struct TCB trước.
+
+```c
+// Array chứa stack (StackType_t)
+StackType_t xTaskStack[ 100 ];
+
+// Biến chứa TCB (StaticTask_t)
+StaticTask_t xTaskBuffer;
+
+TaskHandle_t xHandle = xTaskCreateStatic(
+                          vTaskCode,
+                          "TaskName",
+                          100,            // usStackDepth
+                          NULL,           // pvParameters
+                          1,              // uxPriority
+                          xTaskStack,     // puxStackBuffer
+                          &xTaskBuffer ); // pxTaskBuffer
+```
+
+### <span style="color:#1abc9c">8.3 vTaskDelay() vs vTaskDelayUntil()</span>
+
+| Tiêu chí | `vTaskDelay()` | `vTaskDelayUntil()` |
+|-----------|----------------|---------------------|
+| **Cơ chế** | Delay **RELATIVE** (tương đối) tính từ thời điểm hàm được gọi. | Delay **ABSOLUTE** (tuyệt đối) tính từ lần wake up trước. |
+| **Drift** | Bị **cộng dồn sai số** do thời gian code thực thi và bị preempt. | **Không bị sai số** (hấp thụ thời gian xử lý của task). |
+| **Next Wakeup** | `T_wakeup = T_call + xTicksToDelay` | `T_wakeup = T_last_wake + xTimeIncrement` |
+| **Use Case** | Delay đơn giản, debounce, timeout. | Cần tần số/chu kỳ lặp **chính xác tuyệt đối** (VD: control loop, PID 100Hz). |
+
+> [!WARNING]
+> `vTaskDelayUntil()` cần bật `INCLUDE_vTaskDelayUntil = 1` và yêu cầu biến state `xLastWakeTime` được khởi tạo bằng `xTaskGetTickCount()` trước khi vào loop.
+
+### <span style="color:#1abc9c">8.4 Cơ chế vTaskDelete()</span>
+
+- Yêu cầu `INCLUDE_vTaskDelete = 1`.
+- Gọi `vTaskDelete(NULL)` để xoá **chính task gọi nó**.
+- **Quan trọng**: Nếu xoá task tạo bằng động (dynamic allocation), **Idle task** sẽ chịu trách nhiệm giải phóng TCB và Stack của task đó.
+- ❌ Nếu application tự alloc memory (VD: `malloc()` trong task, hoặc lock mutex) thì application **phải tự free** trước khi xóa.
+- ❌ Nếu **Idle Task bị starved** (do task priority cao chạy liên tục), bộ nhớ của các task bị xoá sẽ **không bao giờ được giải phóng** → Memory Leak!
+
+### <span style="color:#1abc9c">8.5 Runtime Priority Changes</span>
+
+- Hàm `vTaskPrioritySet(pxTask, uxNewPriority)` và `uxTaskPriorityGet(pxTask)`.
+- Truyền `NULL` để chỉ định chính task gọi.
+- Yêu cầu `INCLUDE_vTaskPrioritySet = 1`, `INCLUDE_uxTaskPriorityGet = 1`.
+- Nếu priority được nâng lên cao hơn task đang chạy, quá trình **preemption diễn ra ngay lập tức** (context switch trước khi hàm return).
+
+### <span style="color:#1abc9c">8.6 Idle Task Hook Rules</span>
+
+Idle Task là task priority 0 luôn chạy khi mọi task khác đều bị blocked/suspended.
+Bạn có thể chèn code vào nó bằng cách bật `configUSE_IDLE_HOOK = 1` và định nghĩa `void vApplicationIdleHook(void)`.
+
+> [!IMPORTANT]
+> **Quy tắc của Idle Hook:**
+> 1. **KHÔNG BAO GIỜ BLOCK/SUSPEND**: Idle hook không được gọi delay hoặc chờ semaphore, nếu không hệ thống sẽ crash!
+> 2. **Return promptly**: Phải return liên tục để Idle Task có thể dọn dẹp memory của task đã xoá (`vTaskDelete`).
+> 3. **Ứng dụng chính**: Thường dùng để đưa CPU vào low-power mode, đo spare CPU capacity, hoặc background data clearing.
+
+---
+
+## <span style="color:#e67e22">9. Scheduling Algorithms Nâng cao</span>
+
+> [!NOTE]
+> 📗 Bổ sung từ: Mastering the FreeRTOS Kernel - Richard Barry
+
+### <span style="color:#1abc9c">9.1 Bốn Modes Scheduling</span>
+
+Điều khiển bởi 2 macro trong `FreeRTOSConfig.h`: `configUSE_PREEMPTION` và `configUSE_TIME_SLICING`.
+
+| Mode | PREEMPTION | TIME_SLICING | Mô tả |
+|---|---|---|---|
+| **1 (Default)** | 1 | 1 | **Prioritized Pre-emptive with Time Slicing**<br>Preempt task thấp; Round-robin giữa task cùng priority. |
+| **2** | 1 | 0 | **Prioritized Pre-emptive without Time Slicing**<br>Preempt task thấp; Task cùng priority chạy đến khi tự yield/block. |
+| **3** | 0 | 1 | **Co-operative (Time slicing bị ignore)**<br>Không preemption, task chạy đến khi tự block. |
+| **4** | 0 | 0 | **Co-operative**<br>Giống Mode 3, không tự động context switch ở tick. |
+
+- Nếu dùng **Preemptive**, macro `configIDLE_SHOULD_YIELD = 1` giúp Idle task tự yield nếu có task priority 0 khác sẵn sàng.
+- **Co-operative** (Mode 3, 4): dễ debug, không có race condition, nhưng responsiveness thấp. Mọi context switch do app chủ động.
+
+### <span style="color:#1abc9c">9.2 Phương pháp Chọn Priority (Task Selection Methods)</span>
+
+FreeRTOS tìm task highest-priority ready bằng 2 cách, được chọn qua `configUSE_PORT_OPTIMISED_TASK_SELECTION`:
+
+- **Generic Method** ( = 0 ): Dùng code chuẩn C. Phải lặp tuyến tính (linear search), có độ phức tạp O(n). Không giới hạn `configMAX_PRIORITIES`.
+- **Architecture Optimized Method** ( = 1 ): Dùng tập lệnh phần cứng (Ví dụ: `CLZ` - Count Leading Zeros trên ARM). Độ phức tạp là O(1) (cực nhanh), nhưng priority bị giới hạn ở 32 (do dùng biến 32-bit bitmask).
+
+---
+
+## <span style="color:#e67e22">10. Stack Overflow Detection</span>
+
+> [!NOTE]
+> 📗 Bổ sung từ: Mastering the FreeRTOS Kernel - Richard Barry
+
+Trong RTOS, lỗi vỡ Stack (Stack Overflow) rất dễ xảy ra và làm hỏng TCB/OS variables. FreeRTOS hỗ trợ 2 cơ chế (chọn bằng `configCHECK_FOR_STACK_OVERFLOW`):
+
+- **Method 1 (= 1)**: Tại mỗi lần context switch, OS kiểm tra xem SP có vượt quá giới hạn của stack hay không. Nhanh nhưng có thể sót nếu SP lấn rồi quay về trước lúc switch.
+- **Method 2 (= 2)**: Khi khởi tạo, toàn bộ Stack được điền giá trị `0xA5`. Tại lúc switch, OS kiểm tra 20 byte cuối của Stack. Chậm hơn nhưng cực kỳ đáng tin cậy.
+
+Khi phát hiện lỗi, hệ thống sẽ gọi hook function:
+```c
+void vApplicationStackOverflowHook( TaskHandle_t *pxTask, signed char *pcTaskName );
+```
+
+> [!TIP]
+> Có thể dùng hàm `uxTaskGetStackHighWaterMark(xTask)` để xem số lượng byte stack *ít nhất* từng có (nếu = 0 là sắp vỡ stack).
+
+\n\n## <span style="color:#e67e22">11. So sánh tổng hợp: Super Loop vs RTOS Task</span>
 
 ### <span style="color:#1abc9c">Bảng ưu/nhược điểm:</span>
 
@@ -1543,7 +1676,7 @@ graph TD
 
 ---
 
-## <span style="color:#e67e22">9. Câu hỏi ôn tập (từ sách)</span>
+## <span style="color:#e67e22">12. Câu hỏi ôn tập (từ sách)</span>
 
 1. **Super loop là gì?**
    > → **Cả hai**: (a) Một vòng lặp while vô hạn, VÀ (b) vòng lặp quản lý toàn bộ function call trong embedded system.

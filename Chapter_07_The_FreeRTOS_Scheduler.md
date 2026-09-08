@@ -1274,6 +1274,155 @@ graph TD
 
 ---
 
+## <span style="color:#e67e22">9. FreeRTOS Scheduling Algorithms & Internals (Thuật toán lập lịch & Hoạt động nội tại)</span>
+
+> [!NOTE]
+> 📗 Bổ sung từ: Mastering the FreeRTOS Kernel - Richard Barry
+
+### <span style="color:#1abc9c">9.1 Bốn chế độ thuật toán lập lịch (The 4 FreeRTOS Scheduling Algorithm Modes)</span>
+
+Hành vi lập lịch của FreeRTOS được điều khiển bởi HAI hằng số cấu hình trong `FreeRTOSConfig.h`:
+- `configUSE_PREEMPTION`
+- `configUSE_TIME_SLICING` (mặc định là 1 nếu không được định nghĩa)
+
+#### <span style="color:#3498db">Mode 1: Prioritized Pre-emptive with Time Slicing (Mặc định)</span>
+- `configUSE_PREEMPTION = 1`, `configUSE_TIME_SLICING = 1`
+- Task có priority cao hơn **LUÔN LUÔN** chiếm quyền ưu tiên (preempt) từ task priority thấp hơn ngay lập tức.
+- Các task có cùng priority chia sẻ thời gian CPU theo thuật toán Round-Robin (mỗi task chạy 1 tick).
+- Context switch (Chuyển ngữ cảnh) xảy ra khi: 
+  (a) Một task priority cao hơn chuyển sang trạng thái Ready.
+  (b) Tại mỗi nhịp tick interrupt cho các task cùng priority.
+- Đây là cấu hình phổ biến nhất, cung cấp thời gian phản hồi tốt nhất.
+
+#### <span style="color:#3498db">Mode 2: Prioritized Pre-emptive WITHOUT Time Slicing (Không có Time Slicing)</span>
+- `configUSE_PREEMPTION = 1`, `configUSE_TIME_SLICING = 0`
+- Task priority cao hơn vẫn preempt task priority thấp hơn. 
+- **NHƯNG**: Các task có cùng priority KHÔNG chia sẻ thời gian. Task đang chạy sẽ tiếp tục chiếm dụng CPU cho đến khi nó:
+  (a) Chuyển sang trạng thái Blocked.
+  (b) Chuyển sang trạng thái Suspended.
+  (c) Bị preempt bởi một task có priority cao hơn.
+  (d) Chủ động gọi `taskYIELD()`.
+- **Ứng dụng**: Khi cần tính toán thời gian thực chính xác (deterministic timing) hơn là sự công bằng (fairness).
+
+#### <span style="color:#3498db">Mode 3 & 4: Co-operative Scheduling (Lập lịch Hợp tác)</span>
+- `configUSE_PREEMPTION = 0` (`configUSE_TIME_SLICING` bị bỏ qua).
+- Context switch **CHỈ** xảy ra khi:
+  (a) Task đang chạy gọi `taskYIELD()`.
+  (b) Task đang chạy đi vào trạng thái Blocked.
+- Task priority cao hơn đi vào Ready list **KHÔNG** làm preempt task đang chạy!
+- **Ưu điểm**: Đơn giản, không có race conditions từ preemption.
+- **Nhược điểm**: Thời gian phản hồi có thể rất tệ, các task phải tự giác hợp tác với nhau.
+
+#### Bảng Cấu hình Lập lịch:
+| Mode | `configUSE_PREEMPTION` | `configUSE_TIME_SLICING` | Context Switch Trigger (Kích hoạt Chuyển ngữ cảnh) |
+|---|---|---|---|
+| 1 (Mặc định) | 1 | 1 | Tick interrupt (Time Slicing) + Task ưu tiên cao hơn (Preempt) |
+| 2 | 1 | 0 | Chỉ khi Task ưu tiên cao hơn (Preempt) hoặc Block/Yield |
+| 3 | 0 | x | Chỉ khi chủ động Yield hoặc Block |
+
+---
+
+### <span style="color:#1abc9c">9.2 configIDLE_SHOULD_YIELD</span>
+
+Cấu hình này chỉ có ý nghĩa trong **Mode 1** (Preemptive + Time Slicing). Nó điều khiển cách Idle task (Priority 0) chia sẻ thời gian với các task ứng dụng cùng mức Priority 0.
+
+- **Khi `configIDLE_SHOULD_YIELD = 1`**: 
+  Idle task sẽ chủ động nhường (yield) CPU ngay lập tức nếu có task Priority 0 khác đang ở trạng thái Ready.
+  - Tăng thời gian thực thi cho các task ứng dụng Priority 0.
+  - **Nhược điểm**: Các task Priority 0 khác có thể nhận được khoảng thời gian thực thi không đồng đều.
+
+- **Khi `configIDLE_SHOULD_YIELD = 0`**: 
+  Idle task sử dụng trọn vẹn suất thời gian (time slice) của nó giống như bất kỳ task nào khác.
+  - Tất cả task Priority 0 nhận được thời gian bằng nhau.
+  - **Nhược điểm**: Idle task tiêu tốn trọn 1 tick ngay cả khi các task khác đang chờ CPU.
+
+#### Sơ đồ thời gian (Timing Diagrams):
+
+```text
+Trường hợp 1: configIDLE_SHOULD_YIELD = 1
+Idle task nhường CPU ngay lập tức. Task A và B (Priority 0) chạy.
+
+Tick       1         2         3         4         5
+|----|----|----|----|----|----|----|----|----|----|
+ Idle A    B         Idle A    B         Idle A    B  
+ (Idle bị cắt ngắn)
+```
+
+```text
+Trường hợp 2: configIDLE_SHOULD_YIELD = 0
+Idle task chạy trọn vẹn 1 tick.
+
+Tick       1         2         3         4         5
+|---------|---------|---------|---------|---------|
+ Idle      A         B         Idle      A         B
+ (Idle chiếm trọn 1 tick time slice)
+```
+
+---
+
+### <span style="color:#1abc9c">9.3 Task Priority Selection Methods (Phương pháp chọn Priority)</span>
+
+Có 2 phương pháp để Scheduler tìm ra task có priority cao nhất trong Ready List:
+
+#### <span style="color:#3498db">1. Generic Method (Phương pháp chung)</span>
+- `configUSE_PORT_OPTIMISED_TASK_SELECTION = 0`
+- Viết hoàn toàn bằng ngôn ngữ C, tương thích mọi vi điều khiển (Portability).
+- Không giới hạn số lượng `configMAX_PRIORITIES`.
+- Sử dụng vòng lặp tìm kiếm tuần tự qua các Ready Lists → Thời gian tìm kiếm **O(n)**.
+
+#### <span style="color:#3498db">2. Architecture-Optimized Method (Tối ưu theo kiến trúc)</span>
+- `configUSE_PORT_OPTIMISED_TASK_SELECTION = 1`
+- Sử dụng chỉ thị Assembly đặc biệt của phần cứng (VD: lệnh `CLZ` - Count Leading Zeros trên ARM).
+- Giới hạn tối đa 32 priorities.
+- Thời gian tìm kiếm siêu tốc, luôn cố định ở **O(1)** không phụ thuộc vào số lượng task.
+- Có sẵn trên ARM Cortex-M, x86...
+
+---
+
+### <span style="color:#1abc9c">9.4 Context Switch Internal Mechanics on ARM Cortex-M (Cơ chế Chuyển Ngữ Cảnh)</span>
+
+Chuyển ngữ cảnh là quá trình lưu trạng thái của task cũ và tải trạng thái của task mới lên CPU. Quá trình 7 bước trên ARM Cortex-M:
+
+1. Task đang chạy bị ngắt bởi SysTick (Tick Interrupt) hoặc PendSV.
+2. **Phần cứng tự động lưu**: Các thanh ghi `R0-R3`, `R12`, `LR`, `PC`, `xPSR` vào Stack hiện tại (PSP - Process Stack Pointer).
+3. **Phần mềm Kernel lưu**: Các thanh ghi còn lại `R4-R11` (và `S16-S31` nếu có FPU) vào Stack hiện tại.
+4. Giá trị PSP hiện tại được lưu vào `pxCurrentTCB->pxTopOfStack`.
+5. Scheduler chạy: Thuật toán chọn Task Ready có priority cao nhất và cập nhật biến `pxCurrentTCB` trỏ sang task mới.
+6. PSP mới được nạp từ `pxCurrentTCB->pxTopOfStack` của task mới.
+7. **Phần mềm Kernel phục hồi** `R4-R11`, sau đó **Phần cứng tự động phục hồi** `R0-R3`, `R12`, `LR`, `PC`, `xPSR` từ Stack mới và CPU nhảy vào task mới.
+
+#### Sơ đồ Frame thanh ghi trên Stack (ASCII):
+```text
+      Task Cũ Stack                       Task Mới Stack
+   |-----------------|                 |-----------------|
+   |       ...       |                 |       ...       |
+   | xPSR            | (Hardware save) | xPSR            | (Hardware restore)
+   | PC (R15)        |                 | PC (R15)        | 
+   | LR (R14)        |                 | LR (R14)        |
+   | R12, R3-R0      |                 | R12, R3-R0      |
+   |-----------------|                 |-----------------|
+   | R11 - R4        | (Software save) | R11 - R4        | (Software restore)
+   |-----------------|                 |-----------------|
+<- PSP cũ lưu vào TCB               <- Nạp PSP mới từ TCB
+```
+
+---
+
+### <span style="color:#1abc9c">9.5 SysTick Timer Deep Dive (Phân tích chuyên sâu SysTick)</span>
+
+SysTick là "trái tim" đập nhịp của RTOS.
+- Là một bộ đếm đếm ngược (countdown timer) 24-bit độc lập nằm bên trong nhân ARM Cortex-M.
+- Được RTOS khởi tạo trong bước `vTaskStartScheduler()` với tần số ngắt định kỳ (thường `configTICK_RATE_HZ = 1000` → mỗi 1ms).
+- Hàm ngắt phần cứng `SysTick_Handler()` sẽ gọi `xPortSysTickHandler()` thực hiện 3 việc:
+  1. Tăng biến đếm toàn cục `xTickCount`.
+  2. Kiểm tra xem có task nào đang Blocked vừa hết hạn timeout không (chuyển sang Ready).
+  3. Kích hoạt cờ ngắt **PendSV** nếu cần chuyển ngữ cảnh.
+
+> [!IMPORTANT]
+> **PendSV vs SysTick**: Việc chuyển ngữ cảnh (Context Switch) KHÔNG diễn ra trực tiếp bên trong ngắt SysTick. SysTick chỉ "kích hoạt" ngắt PendSV (ngắt mềm có ưu tiên thấp nhất). PendSV sẽ đợi các ngắt phần cứng khác (như UART, ADC) thực thi xong rồi mới thực hiện việc đổi Task. Điều này đảm bảo RTOS không bao giờ làm trễ các ngắt thời gian thực khắt khe.
+
+---
+
 ## <span style="color:#e67e22">📌 Tóm tắt chương (Key Takeaways)</span>
 
 ```mermaid
