@@ -655,6 +655,50 @@ xTaskCreateRestricted( &xTaskDefinition, &xTaskHandle );
 
 ---
 
+### <span style="color:#1abc9c">2.7 Tái sử dụng Hàm Task với Tham số `pvParameters`</span>
+📗 *Nguồn: Mastering the FreeRTOS Real Time Kernel — Richard Barry (Example 2)*
+
+Một trong những sức mạnh lớn nhất của FreeRTOS là khả năng **tạo ra nhiều Task độc lập từ cùng một hàm C duy nhất** bằng cách truyền các con trỏ tham số khác nhau vào tham số `pvParameters` của `xTaskCreate()`.
+
+```c
+// Hàm Task chung có tính tái nhập (Re-entrant):
+void vGenericPrintTask(void *pvParameters)
+{
+    // Ép kiểu con trỏ void* sang kiểu dữ liệu mong muốn
+    char *pcStringToPrint = (char *)pvParameters;
+
+    for( ;; )
+    {
+        // In chuỗi định danh riêng của task này
+        vPrintString(pcStringToPrint);
+
+        // Chờ 1000 ticks để nhường CPU
+        vTaskDelay(pdMS_TO_TICKS(1000));
+    }
+}
+
+// Chuỗi dữ liệu riêng biệt nằm trong Flash/RAM tĩnh:
+static const char *pcTextForTask1 = "Task 1 dang chay...
+";
+static const char *pcTextForTask2 = "Task 2 dang chay...
+";
+
+void vCreateMultipleTasksFromOneFunction(void)
+{
+    // Tạo Task 1: truyền pcTextForTask1 vào pvParameters
+    xTaskCreate(vGenericPrintTask, "PrintTask1", 128, (void *)pcTextForTask1, 1, NULL);
+
+    // Tạo Task 2: truyền pcTextForTask2 vào pvParameters
+    xTaskCreate(vGenericPrintTask, "PrintTask2", 128, (void *)pcTextForTask2, 1, NULL);
+}
+```
+
+> [!TIP]
+> **Nguyên tắc Re-entrancy (Tính tái nhập):**
+> Khi nhiều task chạy chung một hàm C, mỗi task sở hữu **vùng Stack riêng** chứa con trỏ `pvParameters` và các biến cục bộ (Local Variables) riêng biệt. Các task hoàn toàn không ghi đè dữ liệu lên nhau, miễn là hàm không truy cập trực tiếp vào các biến `static` hoặc biến toàn cục (Global) mà không có Mutex bảo vệ!
+
+---
+
 ## <span style="color:#e67e22">3. Viết hàm Task — Ví dụ Blinky từ sách</span>
 
 ### <span style="color:#1abc9c">3.1 Task tự xóa mình — GreenTask</span>
@@ -936,6 +980,54 @@ Khi scheduler đã chạy thành công:
 
 ---
 
+### <span style="color:#1abc9c">4.4 Cấu hình 3 Vector Ngắt Phần Cứng Cortex-M & Bẫy lỗi Treo Khởi Động</span>
+📘 *Nguồn: Hands-On RTOS with Microcontrollers — Brian Amos & Cortex-M Porting Guide*
+
+Để Scheduler có thể khởi chạy và chuyển ngữ cảnh trên vi điều khiển ARM Cortex-M (STM32), FreeRTOS **bắt buộc phải can thiệp vào 3 ngắt phần cứng hệ thống cốt lõi**:
+
+1. **`SVC` (Supervisor Call):** Dùng đúng một lần trong hàm `xPortStartScheduler()` để nạp ngữ cảnh của task đầu tiên vào CPU và chuyển Stack sang PSP.
+2. **`PendSV` (Pended Service Call):** Đảm nhiệm việc lưu và phục hồi 16 thanh ghi phần cứng khi chuyển ngữ cảnh (Context Switch).
+3. **`SysTick`:** Bộ đếm nhịp tim định thời của hệ điều hành để tăng `xTickCount`.
+
+```mermaid
+graph LR
+    SUBGRAPH_SYS ["Cấu hình trong FreeRTOSConfig.h"]
+        SVC["#define vPortSVCHandler     SVC_Handler"]
+        PEND["#define xPortPendSVHandler  PendSV_Handler"]
+        TICK["#define xPortSysTickHandler SysTick_Handler"]
+    end
+    SUBGRAPH_MCU ["Vector Table trong Startup Assembly (startup_stm32.s)"]
+        V_SVC["Vector 11: SVC_Handler"]
+        V_PEND["Vector 14: PendSV_Handler"]
+        V_TICK["Vector 15: SysTick_Handler"]
+    end
+    SVC -.-> V_SVC
+    PEND -.-> V_PEND
+    TICK -.-> V_TICK
+```
+
+> [!CAUTION]
+> **Bẫy lỗi kinh điển nhất khi tạo dự án STM32CubeIDE:**
+> Mặc định trong file mã nguồn ngắt `stm32f7xx_it.c`, bộ sinh mã tự động đã tạo sẵn 3 hàm rỗng:
+> * `void SVC_Handler(void)`
+> * `void PendSV_Handler(void)`
+> * `void SysTick_Handler(void)`
+> 
+> Nếu trong `FreeRTOSConfig.h` bạn `#define vPortSVCHandler SVC_Handler` thì trình liên kết (Linker) sẽ báo lỗi **"Multiple definition of SVC_Handler"**!
+> **Cách xử lý chuẩn xác:**
+> 1. Hoặc xóa/comment 3 hàm đó trong `stm32f7xx_it.c`.
+> 2. Hoặc trong `stm32f7xx_it.c`, gọi trực tiếp hàm của FreeRTOS bên trong thân hàm:
+> ```c
+> void SysTick_Handler(void) {
+>     HAL_IncTick(); // Giữ nhịp cho thư viện STM32 HAL
+>     if (xTaskGetSchedulerState() != taskSCHEDULER_NOT_STARTED) {
+>         xPortSysTickHandler(); // Chuyển nhịp cho FreeRTOS
+>     }
+> }
+> ```
+
+---
+
 ## <span style="color:#e67e22">5. Xóa Task — vTaskDelete()</span>
 
 ### <span style="color:#1abc9c">5.1 Cú pháp API và Cách sử dụng</span>
@@ -1163,6 +1255,44 @@ Khác Blocked: Suspended **không có timeout** — nằm đó cho đến khi c�
 
 ---
 
+### <span style="color:#1abc9c">6.4 Kiểm tra Trạng thái Task tại Runtime (`eTaskGetState`)</span>
+📗 *Nguồn: Mastering the FreeRTOS Real Time Kernel — Richard Barry (API Reference)*
+
+Để giám sát hoặc debug một Task bất kỳ đang ở trạng thái nào trong 4 trạng thái, FreeRTOS cung cấp API `eTaskGetState()`:
+
+```c
+eTaskState eTaskGetState( TaskHandle_t pxTask );
+```
+
+#### Kiểu dữ liệu trả về `eTaskState` (Enum):
+```c
+typedef enum {
+    eRunning = 0,   // Task đang trực tiếp sở hữu CPU
+    eReady,         // Task sẵn sàng chạy nhưng đang đợi do task khác cùng/cao ưu tiên hơn đang chạy
+    eBlocked,       // Task đang đợi sự kiện (Timeout, Queue, Semaphore)
+    eSuspended,     // Task bị dừng chủ động bởi vTaskSuspend()
+    eDeleted,       // Task đã bị xóa, TCB đang chờ Idle Task giải phóng RAM
+    eInvalid        // Handle không hợp lệ
+} eTaskState;
+```
+
+---
+
+### <span style="color:#1abc9c">6.5 Điều khiển Tạm dừng & Phục hồi Task (`vTaskSuspend` / `vTaskResume`)</span>
+📗 *Nguồn: Mastering the FreeRTOS Real Time Kernel — Richard Barry (Section 3.3)*
+
+Khi một Task cần được tạm dừng vô thời hạn mà không tiêu tốn chu kỳ CPU, ta đưa nó vào trạng thái **Suspended**:
+
+* **`vTaskSuspend(TaskHandle_t pxTaskToSuspend)`:**
+  * Truyền `NULL` để tạm dừng chính task đang gọi.
+  * Task trong trạng thái Suspended sẽ **không bao giờ được đánh thức bởi timeout** (hoàn toàn rút khỏi Ready/Blocked List).
+* **`vTaskResume(TaskHandle_t pxTaskToResume)`:**
+  * Đưa task trở lại trạng thái `Ready`.
+* **`xTaskResumeFromISR(TaskHandle_t pxTaskToResume)`:**
+  * Biến thể an toàn để đánh thức một Suspended Task từ bên trong trình xử lý ngắt ISR.
+
+---
+
 ## <span style="color:#e67e22">7. Optimizing Task States — Tối ưu hóa trạng thái Task</span>
 
 ### <span style="color:#1abc9c">7.1 Optimizing to Reduce CPU Time — Loại bỏ Polling Loop</span>
@@ -1223,6 +1353,55 @@ Task nằm yên ở trạng thái **Blocked** → CPU hoàn toàn rảnh rỗi c
 | **Tần suất đánh thức CPU** | Liên tục mỗi 1ms (1 KHz) | Chỉ đánh thức khi đến hạn task mới |
 | **Dòng điện tiêu thụ** | Cao (CPU luôn duy trì RUN mode) | Siêu thấp (µA trong STOP mode) |
 | **Ứng dụng phù hợp** | Thiết bị cắm điện lưới liên tục | Thiết bị chạy Pin, Cảm biến IoT |
+
+---
+
+### <span style="color:#1abc9c">7.4 Hiện thực Hóa Chu Kỳ Cố Định Tuyệt Đối với `vTaskDelayUntil()`</span>
+📗 *Nguồn: Mastering the FreeRTOS Real Time Kernel — Richard Barry (Example 5)*
+
+Để thấy rõ sự khác biệt giữa `vTaskDelay` và `vTaskDelayUntil`, Richard Barry đưa ra mô hình toán học giải thích sự trôi chu kỳ (Drift):
+
+```mermaid
+sequenceDiagram
+    autonumber
+    actor Timer as Phần Cứng
+    participant T as Periodic Task
+    participant S as Scheduler
+    
+    Note over T: vTaskDelay: Tính từ lúc hàm kết thúc
+    T->>S: Chạy xong mất 3ms -> vTaskDelay(10ms)
+    S-->>T: Đánh thức sau 10ms -> Tổng chu kỳ = 3ms + 10ms = 13ms (TRÔI DẦN!)
+    
+    Note over T: vTaskDelayUntil: Tính từ mốc xLastWakeTime
+    T->>S: Chạy xong mất 3ms -> vTaskDelayUntil(&xLastWake, 10ms)
+    S-->>T: Đánh thức sau 7ms nữa -> Tổng chu kỳ LUÔN ĐÚNG 10ms!
+```
+
+#### Code mẫu chuẩn xác triển khai Periodic Task:
+
+```c
+void vPeriodicTask(void *pvParameters)
+{
+    TickType_t xLastWakeTime;
+    const TickType_t xPeriod = pdMS_TO_TICKS(50); // Chu kỳ chính xác 50ms (20 Hz)
+
+    // Khởi tạo mốc thời gian lần đầu tiên với tick hiện tại:
+    xLastWakeTime = xTaskGetTickCount();
+
+    for( ;; )
+    {
+        // 1. Thực thi thuật toán điều khiển (ví dụ đọc cảm biến IMU, tính toán PID):
+        vComputeControlPID();
+
+        // 2. Chờ đến đúng chu kỳ tiếp theo:
+        // xLastWakeTime được hàm tự động cập nhật bên trong!
+        vTaskDelayUntil(&xLastWakeTime, xPeriod);
+    }
+}
+```
+
+> [!IMPORTANT]
+> **Yêu cầu cấu hình:** Bắt buộc phải đặt `#define INCLUDE_vTaskDelayUntil 1` trong file `FreeRTOSConfig.h`.
 
 ---
 
@@ -1420,6 +1599,82 @@ SysTick là "trái tim" đập nhịp của RTOS.
 
 > [!IMPORTANT]
 > **PendSV vs SysTick**: Việc chuyển ngữ cảnh (Context Switch) KHÔNG diễn ra trực tiếp bên trong ngắt SysTick. SysTick chỉ "kích hoạt" ngắt PendSV (ngắt mềm có ưu tiên thấp nhất). PendSV sẽ đợi các ngắt phần cứng khác (như UART, ADC) thực thi xong rồi mới thực hiện việc đổi Task. Điều này đảm bảo RTOS không bao giờ làm trễ các ngắt thời gian thực khắt khe.
+
+---
+
+### <span style="color:#1abc9c">9.6 Thay đổi Độ ưu tiên Task Động lúc Runtime (`vTaskPrioritySet` & `uxTaskPriorityGet`)</span>
+📗 *Nguồn: Mastering the FreeRTOS Real Time Kernel — Richard Barry (Example 8)*
+
+FreeRTOS cho phép một Task tự nâng/hạ độ ưu tiên của chính nó hoặc của task khác khi đang chạy:
+
+```c
+// 1. Đọc độ ưu tiên hiện tại của Task (truyền NULL = lấy của chính mình):
+UBaseType_t uxPriority = uxTaskPriorityGet(NULL);
+
+// 2. Tăng độ ưu tiên của Task 2 lên cao hơn chính mình:
+vTaskPrioritySet(xTask2Handle, (uxPriority + 1));
+// NGAY LẬP TỨC: Task 2 cướp quyền CPU (Preemption xảy ra ngay trong lệnh này!)
+
+// 3. Khi Task 2 chạy xong, nó hạ độ ưu tiên của mình xuống:
+vTaskPrioritySet(NULL, (uxPriority - 2));
+// CPU lập tức nhường lại cho Task ban đầu!
+```
+
+---
+
+### <span style="color:#1abc9c">9.7 Lập trình Hook cho Idle Task (`vApplicationIdleHook`)</span>
+📗 *Nguồn: Mastering the FreeRTOS Real Time Kernel — Richard Barry (Example 7)*
+
+Idle Task thực thi mỗi khi không có task người dùng nào chạy. Bằng cách cài đặt hàm Hook, ta có thể đo đạc dung lượng CPU nhàn rỗi (Spare Capacity):
+
+```c
+/* Bật trong FreeRTOSConfig.h: */
+#define configUSE_IDLE_HOOK  1
+
+/* Biến đếm số chu kỳ nhàn rỗi: */
+volatile uint32_t ulIdleCycleCount = 0UL;
+
+/* Hàm Hook được Idle Task tự động gọi mỗi vòng lặp: */
+void vApplicationIdleHook(void)
+{
+    /* Tăng biến đếm rảnh rỗi */
+    ulIdleCycleCount++;
+
+    /* Có thể đưa vi điều khiển vào chế độ Sleep tiết kiệm điện: */
+    // __WFI(); // Wait For Interrupt
+}
+```
+
+> [!CAUTION]
+> **Giới hạn của Idle Hook:**
+> 1. Hàm này **tuyệt đối không bao giờ được block hoặc suspend** (không gọi `vTaskDelay` hay chờ Semaphore).
+> 2. Phải trả về thật nhanh để Idle Task kịp dọn dẹp bộ nhớ RAM của các task bị xóa (`vTaskDelete`).
+
+---
+
+### <span style="color:#1abc9c">9.8 Vùng nhớ Cục bộ của Luồng — Thread Local Storage (TLS)</span>
+📗 *Nguồn: Mastering the FreeRTOS Real Time Kernel — Richard Barry (Section 3.11)*
+
+Khi nhiều Task dùng chung các thư viện chuẩn C (như mã lỗi `errno`, con trỏ chuỗi `strtok()`, hoặc con trỏ bộ đệm mạng), việc dùng biến toàn cục sẽ gây lỗi Race Condition. FreeRTOS hỗ trợ cơ chế **Thread Local Storage (TLS)**:
+
+* Cấu hình trong `FreeRTOSConfig.h`:
+  `#define configNUM_THREAD_LOCAL_STORAGE_POINTERS  3` (Mỗi Task có 3 con trỏ `void*` riêng biệt nằm trong TCB).
+* **API lưu trữ con trỏ:**
+  ```c
+  void vTaskSetThreadLocalStoragePointer(
+      TaskHandle_t xTaskToQuery,  // Task cần lưu (NULL = task hiện tại)
+      BaseType_t xIndex,          // Vị trí con trỏ (0 đến configNUM_THREAD_LOCAL_STORAGE_POINTERS - 1)
+      void *pvValue               // Địa chỉ vùng nhớ riêng của task
+  );
+  ```
+* **API lấy con trỏ:**
+  ```c
+  void *pvTaskGetThreadLocalStoragePointer(
+      TaskHandle_t xTaskToQuery,
+      BaseType_t xIndex
+  );
+  ```
+* Ứng dụng thực tế: Mỗi task socket lưu trữ cấu trúc `xSocketContext_t` riêng tại Index 0 mà không cần truyền tham số qua lại.
 
 ---
 
