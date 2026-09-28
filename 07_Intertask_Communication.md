@@ -1,695 +1,1085 @@
-# <span style="color:#f1c40f">Chương 9: Truyền thông giữa các Task (Intertask Communication)</span>
+# <span style="color:#f1c40f">📘 Chương 7: Truyền Thông Liên Tác Vụ & Task Notifications (Intertask Communication & Direct Task Notifications)</span>
 
-```text
-📦 MỤC LỤC
-┣ 📂 1. Truyền dữ liệu qua Queue bằng Giá trị
-┃ ┣ 📜 1.1 Truyền 1 Byte bằng Giá trị
-┃ ┣ 📜 1.2 Truyền Kiểu dữ liệu Phức hợp bằng Giá trị
-┃ ┗ 📜 1.3 Phân tích Tác động của Queue tới Thứ tự Thực thi & Độ ưu tiên
-┣ 📂 2. Truyền dữ liệu qua Queue bằng Tham chiếu
-┃ ┣ 📜 2.1 Khi nào nên truyền bằng Tham chiếu?
-┃ ┣ 📜 2.2 So sánh Truyền bằng Giá trị vs Truyền bằng Tham chiếu
-┃ ┣ 📜 2.3 Mã nguồn Thực tế Truyền Con trỏ
-┃ ┗ 📜 2.4 Cạm bẫy & Quy tắc Vàng khi Truyền bằng Tham chiếu
-┣ 📂 3. Thông báo Trực tiếp đến Task — Direct Task Notifications
-┃ ┣ 📜 3.1 Khái niệm & Ưu điểm vượt trội của Direct Task Notifications
-┃ ┣ 📜 3.2 Truyền dữ liệu đơn giản bằng Task Notifications
-┃ ┣ 📜 3.3 Các Chế độ Hoạt động của Task Notification (eNotifyAction)
-┃ ┗ 📜 3.4 Bảng so sánh Trực quan: Direct Task Notifications vs Queues vs Semaphores
-┣ 📂 4. Tổng kết & Câu hỏi Ôn tập — Summary & Review Questions
-┃ ┣ 📜 4.1 Bảng tổng hợp các API trong Chương 9
-┃ ┗ 📜 4.2 Đáp án Câu hỏi Ôn tập từ Sách
-┗ 📂 5. Thông Báo Tác Vụ chuyên sâu (Task Notifications In-Depth)
-  ┣ 📜 5.1 Kiến trúc Cốt lõi (Core Architecture)
-  ┣ 📜 5.2 Lợi ích Hiệu suất (Performance Benefits)
-  ┣ 📜 5.3 5 Giới hạn Cốt lõi (5 Limitations)
-  ┣ 📜 5.4 Tham chiếu API Hoàn chỉnh (Complete API Reference)
-  ┣ 📜 5.5 Các Mẫu Thay thế (Replacement Patterns)
-  ┣ 📜 5.6 Ví dụ Driver Thực tế (Real-World Driver Examples)
-  ┣ 📜 5.7 Bảng So sánh Toàn diện (Comprehensive Comparison Table)
-  ┗ 📜 5.8 Các Thực hành Tốt nhất (Best Practices)
+*Tài liệu học tập tích hợp chuyên sâu: "Hands-On RTOS with Microcontrollers" (Brian Amos - Chapter 9) & "Mastering the FreeRTOS Real Time Kernel" (Richard Barry - Chapter 9)*
+
+---
+
+```
+========================================================================================================
+                                     MỤC LỤC TỔNG QUAN CHƯƠNG 7
+========================================================================================================
+ 1. Truyền Dữ Liệu Qua Queue Bằng Giá Trị (Passing Data Through Queues by Value)
+    ├─ 1.1 Khái niệm & Cơ chế Copy-by-Value trên vi xử lý ARM Cortex-M
+    ├─ 1.2 Thực nghiệm STM32: Truyền 1 Byte Enum điều khiển LED (mainQueueExample.c)
+    ├─ 1.3 Thực nghiệm STM32: Truyền Cấu trúc Phức hợp sử dụng Bit-field (mainQueueStruct.c)
+    └─ 1.4 Phân tích tác động của Queue tới Thứ tự Thực thi & Độ ưu tiên trên SEGGER SystemView
+ 2. Truyền Dữ Liệu Qua Queue Bằng Tham Chiếu (Passing Data Through Queues by Reference)
+    ├─ 2.1 Khi nào nên truyền bằng Tham chiếu? (Ngưỡng kích thước dữ liệu & Chi phí memcpy)
+    ├─ 2.2 Bảng so sánh chi tiết: Truyền bằng Giá trị vs Truyền bằng Con trỏ
+    ├─ 2.3 Thực nghiệm STM32: Truyền con trỏ tới Struct 264 Bytes (mainQueuePointer.c)
+    ├─ 2.4 Mô hình chuyển giao quyền sở hữu vùng nhớ (Transfer of Memory Ownership)
+    └─ 2.5 Cạm bẫy sống còn: Tránh Dangling Pointer khi trỏ vào Stack biến cục bộ
+ 3. Thông Báo Trực Tiếp Đến Task (Direct Task Notifications In-Depth)
+    ├─ 3.1 Bản chất kiến trúc Kernel: 2 trường ulNotifiedValue & ucNotifyState trong TCB
+    ├─ 3.2 Máy trạng thái thông báo Task (Task Notification State Machine)
+    ├─ 3.3 Lợi ích hiệu suất vượt trội (Nhanh hơn 45%, Tiết kiệm 100% RAM phụ trợ)
+    ├─ 3.4 5 Giới hạn cốt lõi của Task Notification (Bắt buộc phải nắm vững)
+    ├─ 3.5 Bảng tra cứu toàn diện các hàm API Task Notification
+    ├─ 3.6 Bộ API Give/Take cơ bản (Lightweight Binary & Counting Semaphore)
+    ├─ 3.7 Thực nghiệm FreeRTOS cốt lõi (Richard Barry: Example 24 & Example 25)
+    ├─ 3.8 Bộ API đầy đủ tính năng: xTaskNotify, xTaskNotifyWait & 5 chế độ eNotifyAction
+    └─ 3.9 Thực nghiệm STM32: Điều khiển 3 LED bằng Task Notifications (mainTaskNotifications.c)
+ 4. Các Mẫu Thiết Kế Driver Thực Tế (Real-World Driver Patterns)
+    ├─ 4.1 Driver truyền thông UART TX không đồng bộ (Listing 155 Pattern)
+    ├─ 4.2 Driver nhận UART RX kèm cơ chế kiểm tra Timeout liên tục (Listing 156 Pattern)
+    ├─ 4.3 Driver chuyển đổi ADC chuyển kết quả trực tiếp từ ngắt (Listing 157 Pattern)
+    └─ 4.4 Mô hình giao tiếp Client-Server hai chiều: Request qua Queue, Response qua Notification
+ 5. Bảng So Sánh Toàn Diện Giữa 4 Primitive Giao Tiếp FreeRTOS
+ 6. Câu Hỏi Ôn Tập Chuyên Sâu Có Đáp Án Chi Tiết (Brian Amos & Richard Barry)
+ 7. 📌 Tóm Tắt Khắc Cốt Ghi Tâm (Key Takeaways)
+========================================================================================================
 ```
 
 ---
 
-## <span style="color:#e67e22">1. Truyền dữ liệu qua Queue bằng Giá trị — Passing Data through Queues by Value</span>
 
-Trong các hệ thống nhúng thực tế, các Task không bao giờ chạy độc lập hoàn toàn mà luôn cần trao đổi dữ liệu với nhau. **Queue (Hàng đợi)** là một trong những cấu trúc dữ liệu cốt lõi và phổ biến nhất được FreeRTOS cung cấp để thực hiện truyền thông giữa các Task (Intertask Communication - IPC) một cách an toàn (thread-safe).
+## <span style="color:#e67e22">1. Truyền Dữ Liệu Qua Queue Bằng Giá Trị (Passing Data Through Queues by Value)</span>
 
-FreeRTOS Queue hoạt động theo nguyên tắc **FIFO (First-In, First-Out)** — dữ liệu nào vào trước sẽ được rút ra trước.
+📘 *Nguồn tham chiếu: Brian Amos (Chapter 9, Pages 219-230)*
+
+### <span style="color:#1abc9c">1.1 Khái Niệm & Cơ Chế Copy-by-Value Trên Vi Xử Lý ARM Cortex-M</span>
+
+Trong FreeRTOS, cơ chế truyền dữ liệu mặc định của Hàng đợi (Queue) là **Copy-by-Value (Sao chép theo giá trị)**.
+Khi tác vụ gửi gọi hàm `xQueueSend()`, kernel sẽ sử dụng hàm nội bộ `prvCopyDataToQueue()` để sao chép nguyên vẹn từng byte dữ liệu từ con trỏ nguồn do người dùng cung cấp vào vùng đệm lưu trữ (Storage Buffer) nằm bên trong cấu trúc Queue.
+
+```
+ Cơ Chế Sao Chép Bằng Giá Trị (Copy-by-Value):
+ Tác Vụ Gửi (Sender Stack):         Vùng Nhớ Queue (Kernel Storage):        Tác Vụ Nhận (Receiver Stack):
+ ┌──────────────────────┐           ┌─────────────────────────────┐        ┌──────────────────────┐
+ │ Biến: nextCmd = 0x02 │ ──memcpy──> │ Slot 0: [ 0x02 ] (Bản sao) │ ──memcpy─> │ Biến: rxCmd = 0x02   │
+ └──────────────────────┘           └─────────────────────────────┘        └──────────────────────┘
+ (Sender có thể thoải mái ghi đè                                            (Dữ liệu hoàn toàn độc lập,
+  hoặc hủy nextCmd mà không sợ                                               vòng đời bộ nhớ tách rời)
+  ảnh hưởng tới Queue)
+```
+
+#### Ưu Điểm Tuyệt Đối Của Copy-by-Value:
+1. **An toàn bộ nhớ (Memory Safety):** Tác vụ gửi không cần bận tâm về việc biến nguồn có bị sửa đổi hay bị hủy hay không sau khi hàm `xQueueSend()` trả về.
+2. **Loại bỏ xung đột (Zero Race Conditions):** Tác vụ gửi và tác vụ nhận không chia sẻ bất kỳ con trỏ vùng nhớ nào, dữ liệu được cô lập hoàn toàn giữa các không gian Stack của từng tác vụ.
 
 ---
 
-### <span style="color:#1abc9c">1.1 Truyền 1 Byte bằng Giá trị — Passing One Byte by Value</span>
+### <span style="color:#1abc9c">1.2 Thực Nghiệm STM32: Truyền 1 Byte Enum Điều Khiển LED (mainQueueExample.c)</span>
 
-Trong ví dụ đầu tiên, ta thiết lập một Queue chứa các giá trị **1 byte (`uint8_t`)** đại diện cho danh sách các câu lệnh điều khiển LED (`LED_CMDS`).
+* **Mục tiêu thực nghiệm:** Trên board STM32F767ZI Nucleo-144, tác vụ `sendingTask` gửi tuần tự các mã lệnh dạng `enum` (chiếm đúng 1 byte) vào Queue; tác vụ `recvTask` lấy mã lệnh từ Queue ra và điều khiển bật/tắt 3 đèn LED (Xanh lá, Xanh dương, Đỏ).
 
-#### 1. Định nghĩa Enum trạng thái LED:
 ```c
-typedef enum
-{
-    ALL_OFF   = 0,
-    RED_ON    = 1,
-    RED_OFF   = 2,
-    BLUE_ON   = 3,
-    BLUE_OFF  = 4,
-    GREEN_ON  = 5,
-    GREEN_OFF = 6,
-    ALL_ON    = 7
-} LED_CMDS;
-```
+#include "FreeRTOS.h"
+#include "queue.h"
+#include "task.h"
+#include "main.h"
+#include "SEGGER_SYSVIEW.h"
 
-#### 2. Khai báo Handle và Khởi tạo Queue:
-```c
-// Khai báo con trỏ Queue toàn cục (Handle)
+#define STACK_SIZE 128
+
+// 1. Định nghĩa kiểu Enum cho trạng thái LED (kích thước ép về 1 byte uint8_t)
+typedef enum {
+    eLedOff = 0,
+    eLedGreen,
+    eLedBlue,
+    eLedRed,
+    eLedAll,
+    eLedMax
+} LedState_t;
+
+// Khai báo Handle cho Queue toàn cục
 static QueueHandle_t ledCmdQueue = NULL;
 
-int main(void)
+// TÁC VỤ NHẬN DỮ LIỆU VÀ ĐIỀU KHIỂN LED
+static void recvTask(void* args)
 {
-    HWInit();
+    uint8_t rxCmd = 0;
 
-    // Tạo Queue: Chứa tối đa 2 phần tử, mỗi phần tử kích thước 1 Byte (sizeof(uint8_t))
-    ledCmdQueue = xQueueCreate(2, sizeof(uint8_t));
-    assert_param(ledCmdQueue != NULL);
-
-    // Tạo Task và khởi động Scheduler...
-}
-```
-
-> [!NOTE]
-> **CÚ PHÁP VÀ THAM SỐ CỦA HÀM `xQueueCreate()`:**
-> ```c
-> QueueHandle_t xQueueCreate( UBaseType_t uxQueueLength, UBaseType_t uxItemSize );
-> ```
-> - **`uxQueueLength`**: Số lượng phần tử tối đa mà Queue có thể chứa (ở ví dụ trên là `2`).
-> - **`uxItemSize`**: Kích thước tính bằng Byte của **MỖI** phần tử (ở ví dụ trên là `sizeof(uint8_t)` = 1 byte).
-> - **Giá trị trả về**: Con trỏ `QueueHandle_t` cấp phát từ FreeRTOS Heap, hoặc `NULL` nếu bộ nhớ Heap bị vắt cạn.
-
-#### 3. Task Nhận Dữ liệu (`recvTask`):
-```c
-void recvTask( void* NotUsed )
-{
-    uint8_t nextCmd = 0;
     while(1)
     {
-        // Chờ nhận 1 byte từ Queue. Nếu Queue rỗng, Task đi ngủ Blocked (portMAX_DELAY)
-        if(xQueueReceive(ledCmdQueue, &nextCmd, portMAX_DELAY) == pdTRUE)
+        // Block chờ vô hạn (portMAX_DELAY) cho tới khi có lệnh trong Queue
+        if(xQueueReceive(ledCmdQueue, &rxCmd, portMAX_DELAY) == pdPASS)
         {
-            switch(nextCmd)
+            // Tắt toàn bộ LED trước khi cập nhật trạng thái mới
+            HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin, GPIO_PIN_RESET);
+            HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, GPIO_PIN_RESET);
+            HAL_GPIO_WritePin(LED3_GPIO_Port, LED3_Pin, GPIO_PIN_RESET);
+
+            switch((LedState_t)rxCmd)
             {
-                case ALL_OFF:
-                    RedLed.Off(); GreenLed.Off(); BlueLed.Off();
+                case eLedGreen:
+                    HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin, GPIO_PIN_SET);
+                    SEGGER_SYSVIEW_Print("recvTask: Bật LED Xanh lá");
                     break;
-                case GREEN_ON:
-                    GreenLed.On();
+                case eLedBlue:
+                    HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, GPIO_PIN_SET);
+                    SEGGER_SYSVIEW_Print("recvTask: Bật LED Xanh dương");
                     break;
-                case GREEN_OFF:
-                    GreenLed.Off();
+                case eLedRed:
+                    HAL_GPIO_WritePin(LED3_GPIO_Port, LED3_Pin, GPIO_PIN_SET);
+                    SEGGER_SYSVIEW_Print("recvTask: Bật LED Đỏ");
                     break;
-                case RED_ON:
-                    RedLed.On();
+                case eLedAll:
+                    HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin, GPIO_PIN_SET);
+                    HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, GPIO_PIN_SET);
+                    HAL_GPIO_WritePin(LED3_GPIO_Port, LED3_Pin, GPIO_PIN_SET);
+                    SEGGER_SYSVIEW_Print("recvTask: Bật TẤT CẢ LED");
                     break;
-                case RED_OFF:
-                    RedLed.Off();
-                    break;
-                case BLUE_ON:
-                    BlueLed.On();
-                    break;
-                case BLUE_OFF:
-                    BlueLed.Off();
-                    break;
-                case ALL_ON:
-                    RedLed.On(); GreenLed.On(); BlueLed.On();
+                case eLedOff:
+                default:
+                    SEGGER_SYSVIEW_Print("recvTask: Tắt toàn bộ LED");
                     break;
             }
         }
     }
 }
-```
 
-> [!NOTE]
-> **CÚ PHÁP VÀ THAM SỐ CỦA HÀM `xQueueReceive()`:**
-> ```c
-> BaseType_t xQueueReceive( QueueHandle_t xQueue, void *pvBuffer, TickType_t xTicksToWait );
-> ```
-> - **`xQueue`**: Handle con trỏ Queue cần rút dữ liệu ra.
-> - **`pvBuffer`**: Con trỏ trỏ tới vùng nhớ cục bộ để sao chép dữ liệu từ Queue vào (`&nextCmd`).
-> - **`xTicksToWait`**: Thời gian chờ tối đa tính bằng RTOS Ticks nếu Queue đang **RỖNG** (`portMAX_DELAY` để chờ vô thời hạn).
-> - **Giá trị trả về**: `pdTRUE` (hoặc `pdPASS`) nếu rút dữ liệu thành công; `pdFALSE` nếu bị Timeout hoặc Queue Handle không hợp lệ.
-
-#### 4. Task Gửi Dữ liệu (`sendingTask`):
-```c
-void sendingTask( void* NotUsed )
+// TÁC VỤ GỬI DỮ LIỆU
+static void sendingTask(void* args)
 {
+    uint8_t nextCmd = (uint8_t)eLedGreen;
+
     while(1)
     {
-        for(int i = 0; i < 8; i++)
+        // Gửi mã lệnh vào Queue, timeout chờ tối đa 100ms
+        if(xQueueSend(ledCmdQueue, &nextCmd, pdMS_TO_TICKS(100)) == pdPASS)
         {
-            uint8_t ledCmd = (LED_CMDS) i;
-            
-            // Gửi 1 byte vào Queue. Nếu Queue đầy, chờ tối đa portMAX_DELAY
-            xQueueSend(ledCmdQueue, &ledCmd, portMAX_DELAY);
-            
-            // Tạm dừng 200ms để LED chớp tắt kịp quan sát bằng mắt thường
-            vTaskDelay(200 / portTICK_PERIOD_MS);
+            SEGGER_SYSVIEW_Print("sendingTask: Gửi thành công mã lệnh vào Queue");
         }
+        else
+        {
+            SEGGER_SYSVIEW_Warn("sendingTask: Queue đã ĐẦY, không gửi được!");
+        }
+
+        // Chuyển sang trạng thái kế tiếp theo chu kỳ
+        nextCmd++;
+        if(nextCmd >= (uint8_t)eLedMax)
+        {
+            nextCmd = (uint8_t)eLedOff;
+        }
+
+        // Delay 200ms giữa mỗi lần gửi để mắt người quan sát được LED đổi màu
+        vTaskDelay(pdMS_TO_TICKS(200));
     }
+}
+
+int main(void)
+{
+    HAL_Init();
+    SystemClock_Config();
+    MX_GPIO_Init();
+
+    SEGGER_SYSVIEW_Conf();
+    SEGGER_SYSVIEW_Start();
+
+    // 2. Tạo Queue có sức chứa 2 phần tử, mỗi phần tử kích thước 1 byte (sizeof(uint8_t))
+    ledCmdQueue = xQueueCreate(2, sizeof(uint8_t));
+    configASSERT(ledCmdQueue != NULL);
+
+    // Tạo 2 task với cùng mức ưu tiên (Priority 1)
+    xTaskCreate(recvTask,    "recvTask",    STACK_SIZE, NULL, 1, NULL);
+    xTaskCreate(sendingTask, "sendingTask", STACK_SIZE, NULL, 1, NULL);
+
+    vTaskStartScheduler();
+    while(1);
 }
 ```
 
-> [!NOTE]
-> **CÚ PHÁP VÀ THAM SỐ CỦA HÀM `xQueueSend()`:**
-> ```c
-> BaseType_t xQueueSend( QueueHandle_t xQueue, const void *pvItemToQueue, TickType_t xTicksToWait );
-> ```
-> - **`xQueue`**: Handle con trỏ Queue cần gửi dữ liệu vào.
-> - **`pvItemToQueue`**: Con trỏ trỏ tới dữ liệu nguồn cần sao chép vào Queue (`&ledCmd`).
-> - **`xTicksToWait`**: Thời gian chờ tối đa tính bằng RTOS Ticks nếu Queue đang **ĐẦY** (`portMAX_DELAY` chờ đến khi có chỗ trống).
-> - **Giá trị trả về**: `pdTRUE` (hoặc `pdPASS`) nếu gửi thành công; `errQUEUE_FULL` (hoặc `pdFALSE`) nếu Queue bị đầy quá thời gian Timeout.
-
-> [!IMPORTANT]
-> **Cơ chế Copy by Value (Sao chép theo Giá trị):**
-> Khi gọi `xQueueSend(ledCmdQueue, &ledCmd, timeout)`, FreeRTOS sẽ **sao chép từng byte dữ liệu** từ địa chỉ `&ledCmd` vào bộ nhớ RAM nội bộ của Queue. 
-> Sau khi hàm `xQueueSend()` trả về thành công, biến `ledCmd` **có thể bị thay đổi hoặc hủy bỏ** mà không ảnh hưởng đến dữ liệu đã lưu trong Queue!
-
 ---
 
-### <span style="color:#1abc9c">1.2 Truyền Kiểu dữ liệu Phức hợp bằng Giá trị — Passing a Composite Data Type by Value</span>
+### <span style="color:#1abc9c">1.3 Thực Nghiệm STM32: Truyền Cấu Trúc Phức Hợp Sử Dụng Bit-field (mainQueueStruct.c)</span>
 
-Khi cần truyền đồng thời nhiều thông số (ví dụ: trạng thái của cả 3 LED và thời gian trễ kèm theo), ta có thể đóng gói vào một Cấu trúc C (`struct`).
+Trong ví dụ trước, ta chỉ điều khiển được từng trạng thái đơn lẻ. Nếu hệ thống yêu cầu điều khiển **tổ hợp đồng thời trạng thái bật/tắt của cả 3 LED**, ta sử dụng một Cấu trúc phức hợp (Composite Struct) ứng dụng kỹ thuật **Bit-field** để tiết kiệm RAM tối đa:
 
-#### 1. Định nghĩa `struct LedStates_t` (Sử dụng Bit-field):
 ```c
-typedef struct
-{
-    uint8_t redLEDState   : 1; // Chiếm đúng 1 bit (0 hoặc 1)
-    uint8_t blueLEDState  : 1; // Chiếm đúng 1 bit
-    uint8_t greenLEDState : 1; // Chiếm đúng 1 bit
-    uint32_t msDelayTime;      // Thời gian trễ duy trì trạng thái (ms)
+// Định nghĩa cấu trúc Bit-field mô tả trạng thái của cả 3 LED trong đúng 1 Byte:
+typedef struct {
+    uint8_t greenLed : 1; // 1 bit: 0 = Tắt, 1 = Bật
+    uint8_t blueLed  : 1; // 1 bit: 0 = Tắt, 1 = Bật
+    uint8_t redLed   : 1; // 1 bit: 0 = Tắt, 1 = Bật
+    uint8_t reserved : 5; // 5 bit dự phòng (để tròn 8 bits = 1 byte)
 } LedStates_t;
 ```
 
-#### 2. Khai báo Queue chứa Struct:
+#### Khởi Tạo Queue Chứa Struct:
 ```c
-// Queue chứa tối đa 8 phần tử, mỗi phần tử có kích thước bằng sizeof(LedStates_t)
-ledCmdQueue = xQueueCreate(8, sizeof(LedStates_t));
-assert_param(ledCmdQueue != NULL);
+// Kích thước mỗi phần tử của Queue là sizeof(LedStates_t) = 1 byte
+ledCmdQueue = xQueueCreate(2, sizeof(LedStates_t));
 ```
 
-#### 3. Task Nhận (`recvTask`) và Task Gửi (`sendingTask`):
-
+#### Task Nhận Giải Mã Struct:
 ```c
-// Task Nhận: Đọc trọn vẹn cả Struct từ Queue
-void recvTask( void* NotUsed )
+static void recvTask_Struct(void* args)
 {
-    LedStates_t nextCmd;
+    LedStates_t rxStates;
+
     while(1)
     {
-        if(xQueueReceive(ledCmdQueue, &nextCmd, portMAX_DELAY) == pdTRUE)
+        if(xQueueReceive(ledCmdQueue, &rxStates, portMAX_DELAY) == pdPASS)
         {
-            if(nextCmd.redLEDState == 1)   RedLed.On();   else RedLed.Off();
-            if(nextCmd.blueLEDState == 1)  BlueLed.On();  else BlueLed.Off();
-            if(nextCmd.greenLEDState == 1) GreenLed.On(); else GreenLed.Off();
-            
-            // Trì hoãn theo đúng tham số msDelayTime được gửi kèm trong struct!
-            vTaskDelay(nextCmd.msDelayTime / portTICK_PERIOD_MS);
+            // Cập nhật đồng thời cả 3 chân GPIO theo từng trường bit-field:
+            HAL_GPIO_WritePin(LED1_GPIO_Port, LED1_Pin, rxStates.greenLed ? GPIO_PIN_SET : GPIO_PIN_RESET);
+            HAL_GPIO_WritePin(LED2_GPIO_Port, LED2_Pin, rxStates.blueLed  ? GPIO_PIN_SET : GPIO_PIN_RESET);
+            HAL_GPIO_WritePin(LED3_GPIO_Port, LED3_Pin, rxStates.redLed   ? GPIO_PIN_SET : GPIO_PIN_RESET);
         }
     }
 }
-
-// Task Gửi: Đóng gói và đẩy nhiều Struct vào Queue
-void sendingTask( void* NotUsed )
-{
-    LedStates_t nextStates;
-    while(1)
-    {
-        // Lệnh 1: Bật cả 3 LED trong 100ms
-        nextStates.redLEDState = 1; nextStates.greenLEDState = 1; nextStates.blueLEDState = 1;
-        nextStates.msDelayTime = 100;
-        xQueueSend(ledCmdQueue, &nextStates, portMAX_DELAY);
-
-        // Lệnh 2: Tắt LED Xanh dương, giữ trong 1500ms
-        nextStates.blueLEDState = 0;
-        nextStates.msDelayTime = 1500;
-        xQueueSend(ledCmdQueue, &nextStates, portMAX_DELAY);
-
-        // Lệnh 3: Tắt LED Xanh lá, giữ trong 200ms
-        nextStates.greenLEDState = 0;
-        nextStates.msDelayTime = 200;
-        xQueueSend(ledCmdQueue, &nextStates, portMAX_DELAY);
-
-        // Lệnh 4: Tắt LED Đỏ
-        nextStates.redLEDState = 0;
-        xQueueSend(ledCmdQueue, &nextStates, portMAX_DELAY);
-    }
-}
 ```
 
 ---
 
-### <span style="color:#1abc9c">1.3 Phân tích Tác động của Queue tới Thứ tự Thực thi & Độ ưu tiên (Understanding how queues affect execution)</span>
+### <span style="color:#1abc9c">1.4 Phân Tích Tác Động Của Queue Tới Thứ Tự Thực Thi & Mức Ưu Tiên</span>
 
-Để chứng minh dữ liệu được sao chép hoàn toàn vào bộ nhớ Queue, hãy xem xét thử nghiệm đảo ngược độ ưu tiên Task:
+Brian Amos đã thực hiện thí nghiệm thay đổi mức ưu tiên giữa `sendingTask` và `recvTask` để quan sát dòng thực thi trên SEGGER SystemView:
 
-#### Cấu hình Độ ưu tiên:
-- **`sendingTask`**: Đặt độ ưu tiên **CAO NHẤT** (`configMAX_PRIORITIES - 1`).
-- **`recvTask`**: Đặt độ ưu tiên **THẤP** (`tskIDLE_PRIORITY + 1`).
+#### Kịch Bản A: `recvTask` (Priority 2) > `sendingTask` (Priority 1)
+1. `sendingTask` (Pri 1) thức dậy và gọi `xQueueSend()`.
+2. Dữ liệu vừa được chép vào Queue $ightarrow$ Kernel nhận thấy `recvTask` đang bị Blocked có mức ưu tiên cao hơn (2 > 1).
+3. **Preemption diễn ra tức thì:** `recvTask` lập tức chiếm quyền CPU, đọc dữ liệu ra khỏi Queue, cập nhật LED, và quay lại gọi `xQueueReceive()`.
+4. Vì Queue rỗng trở lại, `recvTask` chuyển sang trạng thái Blocked. `sendingTask` được tiếp tục chạy để hoàn thành lệnh send và đi ngủ (`vTaskDelay`).
+5. **Hệ quả quan sát được:** Hàng đợi **không bao giờ chứa quá 1 phần tử** vì dữ liệu được tiêu thụ ngay tại micro-giây nó xuất hiện!
 
-```mermaid
-graph TD
-    subgraph Execution_Flow ["Luồng thực thi khi SendingTask có Priority cao hơn RecvTask"]
-        S1["1. sendingTask (Pri Max) chạy liên tục"] --> S2["2. Nạp liên tục 8 Struct vào Queue mà không bị ngắt"]
-        S2 --> S3["3. Đến phần tử thứ 9: Queue đã ĐẦY (FULL)!<br/>xQueueSend(..., portMAX_DELAY) đẩy sendingTask vào BLOCKED 💤"]
-        S3 --> S4["4. recvTask (Pri Thấp) lúc này mới được CPU cho chạy!<br/>Rút từng phần tử (uxMessagesWaiting = 8 xuống 0)"]
-        S4 --> S5["5. Khi Queue có chỗ trống: sendingTask lập tức thức dậy cướp CPU và nạp tiếp!"]
-    end
-
-    style S3 fill:#e74c3c,color:#fff,stroke:none
-    style S4 fill:#27ae60,color:#fff,stroke:none
-```
-
-> [!WARNING]
-> **ĐÁNH GIÁ ĐỘ TRỄ (LATENCY TRADEOFF):**
-> Đặt Queue quá sâu (ví dụ `8` phần tử) kết hợp với Task nhận có độ ưu tiên thấp sẽ tạo ra **Độ trễ lớn (Latency)** trong hệ thống. Các câu lệnh mới gửi vào Queue có thể phải xếp hàng chờ vài giây sau mới được `recvTask` thực thi!
-
-> [!TIP]
-> **Giải pháp Thiết kế Thực tế của Kỹ sư RTOS (Senior RTOS Design Patterns):**
-> 1. **Ưu tiên `Priority(recvTask) > Priority(sendingTask)` (Phổ biến nhất)**: Dữ liệu vừa nạp vào Queue được rút ra ngay tức khắc ➔ **Độ trễ = 0**, Queue luôn rảnh ➔ Thu nhỏ Queue (1-2 phần tử) giúp **tiết kiệm RAM**.
-> 2. **Dùng Queue ngắn (2-4 items) tạo Áp suất ngược (Backpressure)**: Nếu Task nhận xử lý chậm (thẻ SD, WiFi), Queue ngắn ép Task gửi phải đi ngủ `Blocked` chờ, tránh nạp dồn nợ lệnh.
-> 3. **Chuyển sang Direct Task Notification**: Nếu chỉ cần tín hiệu/trạng thái mới nhất mà không cần xếp hàng các lệnh cũ.
+#### Kịch Bản B: `sendingTask` (Priority 2) > `recvTask` (Priority 1)
+1. `sendingTask` (Pri 2) có mức ưu tiên cao hơn nên chạy trước. Nó nhanh chóng ghi đầy cả 2 slot của Queue (`ledCmdQueue`).
+2. Đến lần gửi thứ 3, Queue đã đầy. Do có tham số `xTicksToWait = pdMS_TO_TICKS(100)`, `sendingTask` bị chuyển sang trạng thái **Blocked chờ Queue có chỗ trống**.
+3. Lúc này, `recvTask` (Pri 1) mới có cơ hội được thực thi. Nó rút 1 phần tử ra $ightarrow$ Queue có 1 slot rảnh $ightarrow$ `sendingTask` lập tức Unblock, Preempt `recvTask` và ghi phần tử mới vào!
+4. **Hệ quả quan sát được:** Queue luôn luôn ở trạng thái **Đầy (Full)**.
 
 ---
 
-## <span style="color:#e67e22">2. Truyền dữ liệu qua Queue bằng Tham chiếu — Passing Data through Queues by Reference</span>
 
-### <span style="color:#1abc9c">2.1 Khi nào nên truyền bằng Tham chiếu? (When to pass by reference)</span>
+## <span style="color:#e67e22">2. Truyền Dữ Liệu Qua Queue Bằng Tham Chiếu (Passing Data Through Queues by Reference)</span>
 
-Khi gói dữ liệu cần truyền có kích thước lớn (ví dụ: chứa mảng ký tự chuỗi, mảng buffer ảnh hoặc mảng cảm biến), việc **sao chép toàn bộ Struct (Pass by Value)** mỗi lần gọi `xQueueSend()` / `xQueueReceive()` sẽ gây ra **lãng phí CPU và RAM cực kỳ nghiêm trọng**.
+📘 *Nguồn tham chiếu: Brian Amos (Chapter 9, Pages 231-235)*
 
-#### Xét ví dụ Struct lớn chứa Chuỗi Ký tự (264 Bytes):
+### <span style="color:#1abc9c">2.1 Khi Nào Nên Truyền Bằng Tham Chiếu? (Ngưỡng Kích Thước Dữ Liệu & Chi Phí memcpy)</span>
+
+Mặc dù cơ chế Copy-by-Value của FreeRTOS rất an toàn, nhưng khi kích thước của khối dữ liệu tăng lên, nó sẽ bộc lộ hai nhược điểm chí mạng:
+1. **Lãng phí RAM của Hàng đợi:** Queue phải cấp phát mảng đệm lưu trữ với kích thước bằng $	ext{uxLength} 	imes 	ext{uxItemSize}$.
+2. **Tiêu hao chu kỳ CPU:** Mỗi lần gọi `xQueueSend()` và `xQueueReceive()`, CPU phải thực thi lệnh `memcpy()` sao chép từng byte trong RAM, làm tăng độ trễ chuyển ngữ cảnh.
+
+#### Ví Dụ Thực Tế Từ Brian Amos: Cấu Trúc Bản Tin Lớn (264 Bytes)
+Giả sử hệ thống cần truyền một bản tin chẩn đoán bao gồm dấu thời gian, ID và chuỗi ký tự text:
 
 ```c
 #define MAX_MSG_LEN 256
 
-typedef struct
-{
-    uint32_t redLEDState   : 1;
-    uint32_t blueLEDState  : 1;
-    uint32_t greenLEDState : 1;
-    uint32_t msDelayTime;
-    char message[MAX_MSG_LEN]; // Mảng 256 ký tự
-} LedStates_t; // Tổng kích thước sau khi Compiler padding = 264 Bytes!
+typedef struct {
+    uint32_t ulTimestamp;
+    uint32_t ulMsgId;
+    char     cMessage[MAX_MSG_LEN];
+} DiagnosticMsg_t; // Tổng kích thước: 4 + 4 + 256 = 264 Bytes!
 ```
 
----
-
-### <span style="color:#1abc9c">2.2 So sánh Truyền bằng Giá trị vs Truyền bằng Tham chiếu</span>
-
-Thay vì copy 264 Bytes mỗi lần, ta tạo Queue chứa **Con trỏ (`LedStates_t*`)** — trên vi điều khiển 32-bit ARM Cortex-M, một con trỏ chỉ nặng **đúng 4 Bytes**!
-
-| Tiêu chí so sánh | Truyền bằng Giá trị (Pass by Value) | Truyền bằng Tham chiếu (Pass by Reference) |
-| :--- | :--- | :--- |
-| **Khai báo Queue** | `xQueueCreate(8, sizeof(LedStates_t))` | `xQueueCreate(8, sizeof(LedStates_t*))` |
-| **Kích thước bộ nhớ Queue** | **2,112 Bytes** ($264 \times 8$) | **32 Bytes** ($4 \times 8$) |
-| **Dung lượng copy mỗi lần** | **264 Bytes** (Tốn nhiều chu kỳ clock CPU) | **4 Bytes** (Chỉ copy duy nhất 1 địa chỉ con trỏ) |
-| **Bản gốc sau khi Send** | Có thể hủy/thay đổi ngay lập tức | **BẮT BUỘC** phải giữ nguyên vẹn trên RAM |
-| **Độ phức tạp lập trình** | Đơn giản, an toàn | Cần quản lý vòng đời bộ nhớ và Quyền sở hữu |
+* **Nếu truyền bằng Giá trị (Pass by Value):**
+  * Khởi tạo Queue có sức chứa 8 phần tử:
+    $$	ext{RAM Tiêu Tốn} = 8 	imes 264 	ext{ bytes} = \mathbf{2.112	ext{ Bytes (~2.1 KB RAM!)}}$$
+  * Với các vi điều khiển chỉ có 20KB hoặc 32KB RAM, một hàng đợi đơn lẻ này đã ngốn mất gần 10% toàn bộ bộ nhớ của chip!
+* **Nếu truyền bằng Con trỏ (Pass by Reference):**
+  * Hàng đợi chỉ lưu trữ địa chỉ con trỏ 32-bit (`sizeof(DiagnosticMsg_t*) = 4 bytes`):
+    $$	ext{RAM Tiêu Tốn} = 8 	imes 4 	ext{ bytes} = \mathbf{32	ext{ Bytes!}}$$
+  * **Tiết kiệm tới 98.5% dung lượng RAM của hàng đợi!**
+  * Tốc độ sao chép chỉ tốn đúng 1 chu kỳ máy (copy 4 bytes con trỏ thay vì chạy vòng lặp 264 bytes)!
 
 ---
 
-### <span style="color:#1abc9c">2.3 Mã nguồn Thực tế Truyền Con trỏ — Real-World Code Passing Pointers</span>
+### <span style="color:#1abc9c">2.2 Bảng So Sánh Chi Tiết: Truyền Bằng Giá Trị vs Truyền Bằng Con Trỏ</span>
+
+| Tiêu Chí So Sánh | Truyền Bằng Giá Trị (Copy-by-Value) | Truyền Bằng Con Trỏ (Pass by Pointer) |
+|---|---|---|
+| **Dung lượng RAM Queue** | Rất lớn: $	ext{QueueLen} 	imes 	ext{StructSize}$ | Siêu nhỏ: $	ext{QueueLen} 	imes 4	ext{ bytes}$ (Cố định trên 32-bit) |
+| **Thời gian thực thi CPU** | Chậm, phụ thuộc tuyến tính vào kích thước dữ liệu ($O(N)$) | Cực nhanh, thời gian hằng số ($O(1)$) |
+| **Vòng đời vùng nhớ (Lifetime)**| Độc lập hoàn toàn, an toàn tuyệt đối | Phụ thuộc chặt, bên gửi phải giữ vùng nhớ tồn tại |
+| **Nguy cơ Race Condition** | ❌ Không có | ⚠️ Rất cao nếu tác vụ gửi tiếp tục sửa dữ liệu |
+| **Nguy cơ Dangling Pointer** | ❌ Không có | ⚠️ Rất cao nếu trỏ vào biến cục bộ trên Stack |
+| **Kịch bản tối ưu** | Dữ liệu nhỏ ($\le 16	ext{ bytes}$): `int`, `float`, enum, struct nhỏ | Dữ liệu lớn ($> 32	ext{ bytes}$): mảng ký tự, frame mạng, frame ảnh |
+
+---
+
+### <span style="color:#1abc9c">2.3 Thực Nghiệm STM32: Truyền Con Trỏ Tới Struct 264 Bytes (mainQueuePointer.c)</span>
+
+Mã nguồn thực tế từ Brian Amos trên vi điều khiển STM32F767ZI:
 
 ```c
-// 1. Tạo 2 biến tĩnh toàn cục nằm cố định trên RAM
-static LedStates_t ledState1 = {
-    1, 0, 0, 1000,
-    "The quick brown fox jumped over the lazy dog. Red LED is ON."
-};
+#include "FreeRTOS.h"
+#include "queue.h"
+#include "task.h"
+#include "main.h"
+#include "SEGGER_SYSVIEW.h"
 
-static LedStates_t ledState2 = {
-    0, 1, 0, 1000,
-    "Another string log message. Blue LED is ON."
-};
+#define MAX_MSG_LEN 256
+#define STACK_SIZE 128
 
-// 2. Task Ghi: Truyền ĐỊA CHỈ CON TRỎ vào Queue
-void sendingTask( void* NotUsed )
+typedef struct {
+    uint32_t ulTimestamp;
+    uint32_t ulMsgId;
+    char     cMessage[MAX_MSG_LEN];
+} DiagnosticMsg_t;
+
+// Khai báo 2 bộ đệm tĩnh toàn cục (Static Memory Buffers)
+static DiagnosticMsg_t msgBuffer1;
+static DiagnosticMsg_t msgBuffer2;
+
+// Handle Queue lưu trữ CON TRỎ
+static QueueHandle_t ptrQueue = NULL;
+
+static void sendingTask_Ptr(void* args)
 {
-    // Tạo biến con trỏ trỏ tới vùng nhớ tĩnh
-    LedStates_t* state1Ptr = &ledState1;
-    LedStates_t* state2Ptr = &ledState2;
-    
+    uint32_t counter = 0;
+
     while(1)
     {
-        // Truyền địa chỉ của con trỏ (&state1Ptr) vào Queue
-        xQueueSend(ledCmdQueue, &state1Ptr, portMAX_DELAY);
-        xQueueSend(ledCmdQueue, &state2Ptr, portMAX_DELAY);
-        
-        vTaskDelay(2000 / portTICK_PERIOD_MS);
+        counter++;
+        // Luân phiên chuẩn bị dữ liệu trên 2 bộ đệm tĩnh
+        DiagnosticMsg_t *pCurrentBuffer = (counter % 2 == 0) ? &msgBuffer1 : &msgBuffer2;
+
+        pCurrentBuffer->ulTimestamp = xTaskGetTickCount();
+        pCurrentBuffer->ulMsgId     = counter;
+        snprintf(pCurrentBuffer->cMessage, MAX_MSG_LEN, "Bản tin chẩn đoán số #%lu từ STM32F7", (unsigned long)counter);
+
+        SEGGER_SYSVIEW_Print("sendingTask: Đang gửi CON TRỎ bản tin vào Queue...");
+
+        // CÚ PHÁP CỐT LÕI: Truyền ĐỊA CHỈ CỦA CON TRỎ (&pCurrentBuffer)
+        // Vì Queue lưu con trỏ, nên tham số truyền vào hàm là con trỏ cấp 2!
+        if(xQueueSend(ptrQueue, &pCurrentBuffer, pdMS_TO_TICKS(100)) == pdPASS)
+        {
+            SEGGER_SYSVIEW_Print("sendingTask: Gửi con trỏ thành công!");
+        }
+        else
+        {
+            SEGGER_SYSVIEW_Warn("sendingTask: Queue con trỏ bị ĐẦY!");
+        }
+
+        vTaskDelay(pdMS_TO_TICKS(500));
     }
 }
 
-// 3. Task Đọc: Rút CON TRỎ ra từ Queue và giải con trỏ (Dereference `->`)
-void recvTask( void* NotUsed )
+static void recvTask_Ptr(void* args)
 {
-    LedStates_t* nextCmd = NULL;
+    DiagnosticMsg_t *pReceivedMsg = NULL;
+
     while(1)
     {
-        if(xQueueReceive(ledCmdQueue, &nextCmd, portMAX_DELAY) == pdTRUE)
+        // Nhận CON TRỎ từ Queue vào biến con trỏ cục bộ pReceivedMsg
+        if(xQueueReceive(ptrQueue, &pReceivedMsg, portMAX_DELAY) == pdPASS)
         {
-            // Sử dụng toán tử con trỏ -> để truy cập dữ liệu
-            if(nextCmd->redLEDState == 1)  RedLed.On();  else RedLed.Off();
-            if(nextCmd->blueLEDState == 1) BlueLed.On(); else BlueLed.Off();
-            
-            // In thông điệp chuỗi ra SEGGER SystemView
-            SEGGER_SYSVIEW_PrintfHost(nextCmd->message);
+            configASSERT(pReceivedMsg != NULL);
+
+            // Truy cập dữ liệu cực nhanh thông qua toán tử trỏ ->
+            SEGGER_SYSVIEW_Print(pReceivedMsg->cMessage);
+
+            // Bật LED xanh báo nhận dữ liệu thành công
+            HAL_GPIO_TogglePin(LED2_GPIO_Port, LED2_Pin);
         }
     }
 }
+
+int main(void)
+{
+    HAL_Init();
+    SystemClock_Config();
+    MX_GPIO_Init();
+
+    SEGGER_SYSVIEW_Conf();
+    SEGGER_SYSVIEW_Start();
+
+    // KHỞI TẠO QUEUE LƯU CON TRỎ:
+    // Sức chứa 8 phần tử, mỗi phần tử có kích thước bằng sizeof(DiagnosticMsg_t*) = 4 bytes!
+    ptrQueue = xQueueCreate(8, sizeof(DiagnosticMsg_t*));
+    configASSERT(ptrQueue != NULL);
+
+    xTaskCreate(recvTask_Ptr,    "recvTask",    STACK_SIZE, NULL, 1, NULL);
+    xTaskCreate(sendingTask_Ptr, "sendingTask", STACK_SIZE, NULL, 1, NULL);
+
+    vTaskStartScheduler();
+    while(1);
+}
 ```
-
-#### Sơ đồ & Phân tích Quy trình Thực thi 4 Bước (Workflow Analysis):
-
-```mermaid
-graph TD
-    subgraph Step1 ["1. Khai báo Vùng nhớ Gốc Cố định"]
-        RAM["RAM Global/Static Memory:<br/>ledState1 (264 Bytes tại địa chỉ 0x20001000)<br/>ledState2 (264 Bytes tại địa chỉ 0x20001108)"]
-    end
-
-    subgraph Step2 ["2. Task Gửi: Đẩy Địa chỉ vào Queue"]
-        SND["sendingTask:<br/>state1Ptr chứa địa chỉ 0x20001000<br/>Gọi xQueueSend(queue, &state1Ptr, ...)<br/>➔ FreeRTOS copy đúng 4 Bytes địa chỉ vào Queue"]
-    end
-
-    subgraph Step3 ["3. Queue Lưu trữ Địa chỉ 4 Bytes"]
-        Q["Bộ nhớ Queue Buffer (Kích thước 32 Bytes):<br/>Slot 1: [ 0x20001000 ]<br/>Slot 2: [ 0x20001108 ]"]
-    end
-
-    subgraph Step4 ["4. Task Nhận: Rút Địa chỉ & Giải con trỏ"]
-        RCV["recvTask:<br/>Gọi xQueueReceive(queue, &nextCmd, ...)<br/>➔ nextCmd nhận giá trị 0x20001000<br/>➔ Dùng toán tử nextCmd->redLEDState để đọc dữ liệu gốc!"]
-    end
-
-    Step1 --> Step2 --> Step3 --> Step4
-
-    style Step1 fill:#1e3799,stroke:#fff,color:#fff
-    style Step2 fill:#d35400,stroke:#fff,color:#fff
-    style Step3 fill:#27ae60,stroke:#fff,color:#fff
-    style Step4 fill:#2c3e50,stroke:#fff,color:#fff
-```
-
-#### Giải thích chi tiết từng bước:
-1. **Bước 1 — Tạo vùng nhớ cố định**: Khai báo 2 biến `ledState1` và `ledState2` kiểu `static` hoặc `global` để đảm bảo vùng nhớ 264 Bytes nằm cố định trên RAM, không bị biến mất hay đè lấp khi hàm kết thúc.
-2. **Bước 2 — Truyền địa chỉ con trỏ (`&state1Ptr`)**: 
-   - `xQueueCreate(8, sizeof(LedStates_t*))` được cấu hình để chứa các **con trỏ 4 Bytes**.
-   - Khi gọi `xQueueSend(ledCmdQueue, &state1Ptr, ...)`, ta truyền **địa chỉ của con trỏ `&state1Ptr`**. FreeRTOS sẽ sao chép đúng **4 Bytes địa chỉ RAM** (ví dụ `0x20001000`) vào ô nhớ của Queue mà **KHÔNG COPY 264 Bytes dữ liệu gốc**.
-3. **Bước 3 — Queue lưu trữ 4 Bytes địa chỉ**: Mỗi slot trong Queue chỉ tiêu tốn 4 Bytes RAM để lưu địa chỉ con trỏ.
-4. **Bước 4 — Rút địa chỉ và giải con trỏ (`->`)**:
-   - `recvTask` truyền địa chỉ con trỏ nhận `&nextCmd`.
-   - `xQueueReceive()` sao chép 4 Bytes địa chỉ `0x20001000` từ Queue vào biến con trỏ `nextCmd`.
-   - `recvTask` sử dụng toán tử giải con trỏ `nextCmd->redLEDState` để truy cập trực tiếp vào vùng nhớ gốc 264 Bytes trên RAM.
 
 ---
 
-### <span style="color:#1abc9c">2.4 Cạm bẫy & Quy tắc Vàng khi Truyền bằng Tham chiếu</span>
+### <span style="color:#1abc9c">2.4 Mô Hình Chuyển Giao Quyền Sở Hữu Vùng Nhớ (Transfer of Memory Ownership)</span>
+
+Khi lập trình truyền dữ liệu bằng con trỏ, kỹ sư phần mềm bắt buộc phải tuân thủ nghiêm ngặt **Mô hình Chuyển giao quyền sở hữu (Ownership Transfer Protocol)**:
+
+```
+ [TÁC VỤ GỬI]                             [HÀNG ĐỢI QUEUE]                         [TÁC VỤ NHẬN]
+ ┌──────────────────────┐                 ┌────────────────┐                       ┌──────────────────────┐
+ │ Cấp phát bộ đệm      │                 │                │                       │                      │
+ │ Ghi dữ liệu vào đệm  │                 │                │                       │                      │
+ │ CHUYỂN GIAO SỞ HỮU   │ ──Gửi Pointer──> │ [ Địa chỉ RAM] │ ──Nhận Pointer──>    │ TIẾP NHẬN SỞ HỮU     │
+ │ (CẤM CHẠM VÀO ĐỆM!)  │                 │                │                       │ Đọc & xử lý dữ liệu  │
+ │                      │                 │                │                       │ GIẢI PHÓNG BỘ ĐỆM!   │
+ └──────────────────────┘                 └────────────────┘                       └──────────────────────┘
+```
+
+1. **Giai đoạn 1 (Sở hữu bởi Bên gửi):** Tác vụ gửi có quyền ghi chép dữ liệu vào vùng đệm.
+2. **Giai đoạn 2 (Chuyển giao):** Ngay sau khi lệnh `xQueueSend()` thành công, **TÁC VỤ GỬI PHẢI TỪ BỎ HOÀN TOÀN MỌI QUYỀN TRUY CẬP** vào vùng đệm đó. Tuyệt đối không được đọc hay sửa đổi nội dung vùng đệm khi nó đang nằm trong Queue.
+3. **Giai đoạn 3 (Sở hữu bởi Bên nhận):** Tác vụ nhận sau khi gọi `xQueueReceive()` trở thành chủ sở hữu độc quyền duy nhất.
+4. **Giai đoạn 4 (Thu hồi):** Tác vụ nhận có trách nhiệm giải phóng bộ đệm (nếu dùng Heap `vPortFree()`) hoặc trả về Pool tái sử dụng.
+
+---
+
+### <span style="color:#1abc9c">2.5 Cạm Bẫy Sống Còn: Tránh Dangling Pointer Khi Trỏ Vào Stack Biến Cục Bộ</span>
 
 > [!CAUTION]
-> **3 NGUYÊN TẮC VÀNG KHI TRUYỀN CON TRỎ QUA QUEUE:**
-> 
-> 1. **KHÔNG BAO GIỜ TRUYỀN CON TRỎ TRỎ TỚI BIẾN CỤC BỘ NẰM TRÊN STACK (Stack Variables)!**
->    - Nếu Task gửi tạo một struct cục bộ bên trong hàm rồi gửi con trỏ `&myLocalStruct` vào Queue, khi hàm đó kết thúc hoặc Task gửi bị Context Switch, vùng Stack đó sẽ bị ghi đè! Task nhận rút con trỏ ra đọc sẽ dính dữ liệu rác hoặc gây lỗi sập vi điều khiển (`HardFault`).
->    - **Giải pháp**: Vùng nhớ chứa dữ liệu gốc bắt buộc phải là biến **`global`**, biến **`static`**, hoặc cấp phát động bằng **`pvPortMalloc()`**.
-> 
-> 2. **CẢNH BÁO ÉP KIỂU `void*` CỦA FREERTOS:**
->    - Các hàm `xQueueSend` / `xQueueReceive` nhận tham số kiểu `void*`. Compiler sẽ **KHÔNG CẢNH BÁO** nếu bạn truyền nhầm địa chỉ của Struct thay vì địa chỉ của Con trỏ! Bạn phải tự quản lý chính xác kiểu dữ liệu.
-> 
-> 3. **QUYỀN SỞ HỮU DỮ LIỆU (DATA OWNERSHIP):**
->    - Khi truyền bằng Giá trị, Queue sở hữu bản sao dữ liệu.
->    - Khi truyền bằng Tham chiếu, Queue chỉ giữ địa chỉ. Bạn phải quy định rõ ràng: Task nào chịu trách nhiệm giải phóng bộ nhớ (`vPortFree()`) sau khi dùng xong nếu dữ liệu được cấp phát động!
+> **THẢM HỌA LẬP TRÌNH NHÚNG: TRUYỀN CON TRỎ TỚI BIẾN CỤC BỘ TRÊN STACK (LOCAL STACK VARIABLE)**
+>
+> Đoạn mã sau đây chứa một lỗi chết người mà mọi kỹ sư nhúng phải khắc cốt ghi tâm:
+> ```c
+> void vCatastrophicSender(void)
+> {
+>     DiagnosticMsg_t localMsg; // BIẾN NẰM TRÊN STACK CỦA HÀM NÀY!
+>     localMsg.ulMsgId = 42;
+>     snprintf(localMsg.cMessage, MAX_MSG_LEN, "Dữ liệu nguy hiểm");
+>
+>     DiagnosticMsg_t *p = &localMsg;
+>     xQueueSend(ptrQueue, &p, portMAX_DELAY);
+> } // <-- KHI HÀM NÀY THOÁT, CON TRỎ STACK (SP) BỊ THU HỒI!
+> ```
+> * **Hậu quả:** Vùng nhớ của `localMsg` trên Stack bị đánh dấu là tự do. Khi tác vụ gọi hàm khác, Stack frame của hàm mới sẽ **ghi đè dữ liệu rác lên chính ô nhớ của `localMsg`**!
+> * Khi tác vụ nhận đọc con trỏ `p`, nó sẽ đọc phải vùng nhớ rác (Dangling Pointer) hoặc nếu ô nhớ nằm ngoài phạm vi cho phép của MPU sẽ kích hoạt lỗi phần cứng **HardFault Crash Chip ngay lập tức**!
+>
+> **QUY TẮC BẤT DI BẤT DỊCH:**
+> Vùng nhớ được truyền qua con trỏ **BẮT BUỘC PHẢI LÀ**:
+> 1. Biến toàn cục / Biến tĩnh (`static DiagnosticMsg_t buffer;`).
+> 2. Vùng nhớ cấp phát động từ FreeRTOS Heap (`pvPortMalloc()`).
+> 3. Tuyệt đối **KHÔNG BAO GIỜ** lấy địa chỉ của biến cục bộ không có từ khóa `static` để gửi vào Queue!
 
 ---
 
-## <span style="color:#e67e22">3. Thông Báo Trực Tiếp Đến Task — Direct Task Notifications In-Depth</span>
 
-### <span style="color:#1abc9c">3.1 Kiến trúc Cốt lõi (Core Architecture)</span>
-- Mô hình truyền thông trực tiếp đến Task (không qua đối tượng trung gian).
-- Mỗi Task có 2 trường tích hợp sẵn trong TCB: **Notification State** (Pending/Not-Pending) và **Notification Value** (`uint32_t`).
-- Cấu hình kích hoạt: `configUSE_TASK_NOTIFICATIONS = 1`
-- Dung lượng: Tốn 8 bytes RAM cho mỗi Task (so với 70-80+ bytes cho một Queue).
+## <span style="color:#e67e22">3. Thông Báo Trực Tiếp Đến Task (Direct Task Notifications In-Depth)</span>
 
-### <span style="color:#1abc9c">3.2 Lợi ích Hiệu suất (Performance Benefits)</span>
-- Nhanh hơn đáng kể so với queues/semaphores (đường dẫn mã nguồn tối giản, không cần duyệt danh sách liên kết).
-- Hoàn toàn **không cần cấp phát bộ nhớ động (Zero dynamic allocation)**.
-- Các Task sẵn sàng nhận thông báo ngay lập tức khi vừa được tạo ra.
+📘 *Nguồn tham chiếu: Brian Amos (Chapter 9, Pages 236-239) & Richard Barry (Chapter 9, Pages 323-356)*
 
-### <span style="color:#1abc9c">3.3 5 Giới hạn Cốt lõi (5 Limitations)</span>
-> [!IMPORTANT]
-> Cần lưu ý 5 hạn chế sau khi sử dụng Task Notifications:
-1. **Không thể gửi đến ISR**: ISR không có TCB (Task Control Block).
-2. **Không thể có nhiều Task nhận**: Chỉ giới hạn chặt chẽ gửi cho 1 Task.
-3. **Không thể đệm nhiều mục dữ liệu**: Chỉ có duy nhất một giá trị `uint32_t`.
-4. **Không thể phát sóng (broadcast)**: Không gửi được cho nhiều Task cùng lúc.
-5. **Không thể block (chờ) khi gửi**: Task gửi không thể chờ cho đến khi gửi xong (chỉ Task nhận mới có thể block để chờ nhận).
+### <span style="color:#1abc9c">3.1 Bản Chất Kiến Trúc Kernel: 2 Trường Trong TCB</span>
 
-### <span style="color:#1abc9c">3.4 Tham chiếu API Hoàn chỉnh (Complete API Reference)</span>
+Kể từ FreeRTOS V8.2.0, một cơ chế truyền thông trực tiếp mang tên **Task Notifications (Thông báo trực tiếp đến tác vụ)** được giới thiệu và nhanh chóng trở thành phương thức giao tiếp được ưu tiên hàng đầu trong các thiết kế nhúng hiện đại.
 
-#### <span style="color:#3498db">▸ API Give/Take Cơ bản (Lightweight Semaphore Replacement)</span>
-1. `xTaskNotifyGive(xTaskToNotify)`: Luôn trả về `pdPASS`, tăng giá trị notification lên 1.
-2. `vTaskNotifyGiveFromISR(xTaskToNotify, pxHigherPriorityTaskWoken)`: Phiên bản an toàn trong ngắt (ISR-safe).
-3. `ulTaskNotifyTake(xClearCountOnExit, xTicksToWait)`:
-   - `xClearCountOnExit = pdTRUE`: Hoạt động như Binary Semaphore (xóa giá trị về 0 sau khi đọc).
-   - `xClearCountOnExit = pdFALSE`: Hoạt động như Counting Semaphore (giảm giá trị đi 1 sau khi đọc).
-   - **Trả về**: Giá trị notification trước khi bị xóa/giảm.
+Trong mô hình Queue, Semaphore hoặc Event Group truyền thống:
+* Bạn bắt buộc phải gọi hàm tạo đối tượng (ví dụ: `xQueueCreate()`, `xSemaphoreCreateBinary()`).
+* Kernel phải cấp phát bộ nhớ RAM cho một cấu trúc điều khiển hàng đợi (`QueueDefinition` tốn ~76 đến 80 bytes RAM).
+* Các tác vụ gửi và nhận phải gián tiếp tương tác thông qua Handle của đối tượng trung gian này.
 
-#### <span style="color:#3498db">▸ API Đầy đủ Tính năng (Full-Featured APIs)</span>
-4. `xTaskNotify(xTaskToNotify, ulValue, eAction)` với 5 chế độ `eNotifyAction`:
-   - `eNoAction`: Chỉ thiết lập trạng thái thành Pending (Binary Semaphore siêu nhẹ).
-   - `eSetBits`: `val |= ulValue` (Event Group siêu nhẹ).
-   - `eIncrement`: `val++` (Counting Semaphore siêu nhẹ).
-   - `eSetValueWithoutOverwrite`: Ghi nếu chưa Pending, trả về `pdFAIL` nếu đang Pending (Queue 1 phần tử).
-   - `eSetValueWithOverwrite`: Luôn luôn ghi đè (Mailbox).
-5. `xTaskNotifyFromISR()`: Phiên bản an toàn trong ngắt (ISR-safe).
-6. `xTaskNotifyWait(ulBitsToClearOnEntry, ulBitsToClearOnExit, pulNotificationValue, xTicksToWait)`:
-   - `ulBitsToClearOnEntry`: Các bit cần xóa khi bắt đầu chờ (`0xFFFFFFFF` để xóa toàn bộ).
-   - `ulBitsToClearOnExit`: Các bit cần xóa sau khi nhận được thông báo.
-   - `pulNotificationValue`: Biến lưu trữ giá trị trước khi bị xóa ở bước exit.
-7. `xTaskNotifyStateClear(xTask)`: Chuyển trạng thái từ Pending sang Not-Pending mà không làm thay đổi giá trị.
+**Với Task Notifications:**
+Kernel nhúng trực tiếp 2 trường dữ liệu vào ngay bên trong khối điều khiển tác vụ **TCB (Task Control Block)** của TẤT CẢ các tác vụ (khi cấu hình `configUSE_TASK_NOTIFICATIONS == 1`):
 
-### <span style="color:#1abc9c">3.5 Các Mẫu Thay thế (Replacement Patterns)</span>
-
-| Đối tượng RTOS (RTOS Object) | Cấu hình Notification Tương đương | API Gửi (Send API) | API Nhận (Receive API) | Ghi chú (Notes) |
-|---|---|---|---|---|
-| Binary Semaphore | Give/Take với clear | `xTaskNotifyGive` | `ulTaskNotifyTake(pdTRUE, ...)` | Đồng bộ hóa nhanh nhất (Fastest sync) |
-| Counting Semaphore | Give/Take với decrement | `xTaskNotifyGive` | `ulTaskNotifyTake(pdFALSE, ...)` | Đếm số sự kiện (Count events) |
-| Event Group | SetBits / WaitBits | `xTaskNotify(..., eSetBits)` | `xTaskNotifyWait(0, mask, ...)` | Cờ 32-bit (32-bit flags) |
-| Mailbox | Ghi đè (Overwrite) | `xTaskNotify(..., eSetValueWithOverwrite)` | `xTaskNotifyWait(...)` | Giá trị mới nhất (Latest value) |
-| Queue 1-Phần tử | Không ghi đè (No overwrite) | `xTaskNotify(..., eSetValueWithoutOverwrite)` | `xTaskNotifyWait(...)` | `pdFAIL` nếu đầy |
-
-### <span style="color:#1abc9c">3.6 Ví dụ Driver Thực tế (Real-World Driver Examples)</span>
-
-#### <span style="color:#3498db">▸ 1. Driver Truyền UART (UART Transmit Driver - Listing 155 pattern)</span>
 ```c
-// 📗 Nguồn: Mastering the FreeRTOS Real Time Kernel - Richard Barry
-static TaskHandle_t xTaskToNotify = NULL;
-
-void xUART_Send(uint8_t *pData, uint16_t length)
+/* Trích xuất từ cấu trúc tskTaskControlBlock trong FreeRTOS/Source/tasks.c */
+typedef struct tskTaskControlBlock
 {
-    // 1. Lưu lại handle của Task hiện tại đang gọi hàm này
-    xTaskToNotify = xTaskGetCurrentTaskHandle();
-    
-    // 2. Xóa các thông báo cũ (stale notification) trước khi truyền
-    ulTaskNotifyTake(pdTRUE, 0);
-    
-    // 3. Kích hoạt phần cứng UART TX
-    HAL_UART_Transmit_IT(&huart1, pData, length);
-    
-    // 4. Block để chờ ngắt báo xong (timeout max)
-    ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-}
+    /* ... Các trường con trỏ Stack, Tên task, Priority ... */
 
-void xUART_TransmitEndISR(void)
+    #if( configUSE_TASK_NOTIFICATIONS == 1 )
+        volatile uint32_t ulNotifiedValue; // Giá trị thông báo 32-bit (Payload / Bitmask / Counter)
+        volatile uint8_t  ucNotifyState;   // Trạng thái thông báo của tác vụ (State Machine)
+    #endif
+
+} tskTCB;
+```
+
+```
+ Giao Tiếp Cũ Qua Đối Tượng Trung Gian:
+ [Task Gửi / ISR] ──> [ Đối Tượng Queue / Semaphore (~80 Bytes RAM) ] ──> [Task Nhận]
+
+ Giao Tiếp Mới Trực Tiếp Đến TCB (Direct to Task):
+ [Task Gửi / ISR] ────────────────(Ghi Thẳng Vào TCB)─────────────────> [TCB Task Nhận (0 Byte Phụ Trợ!)]
+```
+
+---
+
+### <span style="color:#1abc9c">3.2 Máy Trạng Thái Thông Báo Task (Task Notification State Machine)</span>
+
+Biến `ucNotifyState` bên trong TCB hoạt động theo một máy trạng thái 3 cấp độ:
+
+```mermaid
+stateDiagram-v2
+    [*] --> taskNOT_WAITING : Khởi tạo Task
+    taskNOT_WAITING --> taskWAITING : Task gọi xTaskNotifyWait() / ulTaskNotifyTake()
+    taskWAITING --> taskNOT_WAITING : Nhận được thông báo / Hết hạn Timeout
+    taskNOT_WAITING --> taskNOTIFICATION_RECEIVED : Bên khác gửi xTaskNotify() khi Task chưa chờ
+    taskNOTIFICATION_RECEIVED --> taskNOT_WAITING : Task đọc thông báo
+```
+
+1. **`taskNOT_WAITING_NOTIFICATION` (0):** Tác vụ đang thực thi bình thường hoặc đang bị Blocked bởi các sự kiện khác (`vTaskDelay`, Queue khác), không chờ thông báo.
+2. **`taskWAITING_NOTIFICATION` (1):** Tác vụ đã chủ động gọi `ulTaskNotifyTake()` hoặc `xTaskNotifyWait()` với thời gian chờ `xTicksToWait > 0` và đang rơi vào trạng thái Blocked để kiên nhẫn đợi thông báo tới.
+3. **`taskNOTIFICATION_RECEIVED` (2):** Đã có một tác vụ khác hoặc ngắt ISR gửi thông báo tới TCB của tác vụ này trong khi tác vụ này chưa kịp đọc (đóng vai trò là cờ Pending Latch).
+
+---
+
+### <span style="color:#1abc9c">3.3 Lợi Ích Hiệu Suất Vượt Trội (Nhanh Hơn 45%, Tiết Kiệm 100% RAM Phụ Trợ)</span>
+
+Các phép đo lường thực tế trên lõi ARM Cortex-M được công bố bởi Richard Barry và Brian Amos đã chứng minh:
+* **Tốc độ thực thi nhanh hơn ~45%:** Thao tác gửi và nhận Task Notification chỉ tốn khoảng **20 đến 30 chu kỳ CPU clock**, trong khi Queue hoặc Semaphore mất tới **70 đến 100 chu kỳ**. Lý do: Kernel ghi chép trực tiếp vào thanh ghi của TCB mục tiêu mà không cần phải thực hiện các thuật toán duyệt danh sách sự kiện phức tạp (`Event List Traversal`).
+* **Tiết kiệm 100% dung lượng RAM phụ trợ:** Không cần cấp phát bộ nhớ đệm hay TCB hàng đợi. Toàn bộ 8 byte quản lý đã nằm sẵn trong TCB từ khi tạo task!
+
+---
+
+### <span style="color:#1abc9c">3.4 5 Giới Hạn Cốt Lõi Của Task Notification</span>
+
+Mặc dù cực kỳ mạnh mẽ, Task Notifications không thể thay thế hoàn toàn Queue hay Event Group vì 5 giới hạn vật lý bắt buộc phải ghi nhớ:
+
+> [!CAUTION]
+> **5 GIỚI HẠN BẮT BUỘC PHẢI BIẾT CỦA TASK NOTIFICATIONS:**
+>
+> 1. **CHỈ CÓ DUY NHẤT 1 TÁC VỤ NHẬN:**
+>    Mỗi thông báo được gửi trực tiếp tới một TCB cụ thể. Không thể có nhiều tác vụ cùng chờ trên một thông báo, và không thể Broadcast phát sóng đồng loạt như Event Group.
+> 
+> 2. **BÊN NHẬN BẮT BUỘC PHẢI LÀ MỘT TASK:**
+>    Ngắt phần cứng (ISR) không có cấu trúc TCB, do đó **ISR KHÔNG THỂ NHẬN TASK NOTIFICATION** (ISR chỉ có thể là bên gửi).
+> 
+> 3. **KHÔNG THỂ ĐỆM NHIỀU PHẦN TỬ DỮ LIỆU (KHÔNG CÓ FIFO BUFFER):**
+>    TCB chỉ lưu đúng một giá trị số nguyên 32-bit (`ulNotifiedValue`). Không thể dùng để lưu trữ mảng hay chuỗi nhiều byte liên tiếp như Queue.
+> 
+> 4. **KHÔNG THỂ GỬI TỚI NHIỀU TASK TRONG MỘT LỆNH:**
+>    Muốn báo cho $N$ task, bên gửi phải chạy vòng lặp gọi $N$ lần hàm API gửi.
+> 
+> 5. **BÊN GỬI KHÔNG THỂ BỊ BLOCKED CHỜ BÊN NHẬN:**
+>    Các hàm gửi `xTaskNotify()` và `xTaskNotifyGive()` luôn hoàn thành tức thời và trả về ngay. Bên gửi không thể chỉ định `xTicksToWait` để chờ bên nhận đọc xong.
+
+---
+
+### <span style="color:#1abc9c">3.5 Bảng Tra Cứu Toàn Diện Các Hàm API Task Notification</span>
+
+| Nhóm API | Tên Hàm API | Ngữ Cảnh Gọi | Chức Năng Cốt Lõi |
+|---|---|---|---|
+| **Cơ Bản (Give/Take)** | `xTaskNotifyGive()` | Task | Tăng `ulNotifiedValue` thêm 1 (Giống Give Semaphore). Luôn trả về `pdPASS`. |
+| | `vTaskNotifyGiveFromISR()` | ISR | Biến thể an toàn trong ngắt, kèm cờ `pxHigherPriorityTaskWoken`. |
+| | `ulTaskNotifyTake()` | Task | Chờ nhận thông báo. Cho phép reset về 0 (Binary Sem) hoặc giảm 1 (Counting Sem). |
+| **Đầy Đủ Tính Năng** | `xTaskNotify()` | Task | Gửi thông báo kèm giá trị 32-bit và tùy chọn 1 trong 5 chế độ `eNotifyAction`. |
+| | `xTaskNotifyFromISR()` | ISR | Biến thể gửi đầy đủ tính năng từ ngắt phần cứng. |
+| | `xTaskNotifyWait()` | Task | Chờ thông báo đa năng: hỗ trợ lọc bitmask, xóa bit khi vào/ra, đọc giá trị 32-bit. |
+| | `xTaskNotifyStateClear()` | Task | Xóa cờ trạng thái Pending về `taskNOT_WAITING` mà không làm đổi giá trị 32-bit. |
+
+---
+
+### <span style="color:#1abc9c">3.6 Bộ API Give/Take Cơ Bản (Lightweight Binary & Counting Semaphore)</span>
+
+Hàm `ulTaskNotifyTake()` là sự thay thế hoàn hảo cho `xSemaphoreTake()`:
+
+```c
+uint32_t ulTaskNotifyTake( BaseType_t xClearCountOnExit, TickType_t xTicksToWait );
+```
+
+#### Phân Tích Tham Số & Hành Vi Kỹ Thuật:
+* **Tham số `xClearCountOnExit`:**
+  * **Nếu đặt `= pdTRUE` (Chế độ Binary Semaphore):**
+    Ngay trước khi hàm trả về, giá trị `ulNotifiedValue` trong TCB sẽ bị **xóa sạch về 0**. Lần gọi tiếp theo chắc chắn sẽ bị Block cho đến khi có bên khác Give.
+  * **Nếu đặt `= pdFALSE` (Chế độ Counting Semaphore):**
+    Trước khi hàm trả về, giá trị `ulNotifiedValue` chỉ bị **giảm đi 1 đơn vị (`ulNotifiedValue--`)**. Nếu trước đó có nhiều lần Give, các lần Take tiếp theo sẽ chạy qua ngay lập tức mà không bị Block!
+* **Giá trị trả về:**
+  Trả về giá trị của `ulNotifiedValue` **TẠI THỜI ĐIỂM TRƯỚC KHI** nó bị xóa về 0 hoặc giảm đi 1! Nhờ đó, task có thể biết chính xác đã có bao nhiêu sự kiện đang tồn đọng.
+
+---
+
+### <span style="color:#1abc9c">3.7 Thực Nghiệm FreeRTOS Cốt Lõi (Richard Barry)</span>
+
+#### Thực Nghiệm 24: Thay Thế Binary Semaphore Bằng Task Notification (Example 24)
+* **Kịch bản:** Ngắt phần cứng ISR giải phóng công việc trì hoãn (Deferred Processing) cho Handler Task. Thay vì tạo một Binary Semaphore tốn 80 bytes RAM, ta dùng trực tiếp Task Notification:
+
+```c
+static TaskHandle_t xHandlerTask = NULL;
+
+/* HÀM NGẮT PHẦN CỨNG ISR */
+void vExampleInterruptHandler( void )
 {
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    
-    // Gửi thông báo đến Task đã lưu
-    // Lưu ý: Việc ghi con trỏ 32-bit là atomic trên CPU 32-bit
-    if(xTaskToNotify != NULL)
+
+    // Gửi thông báo trực tiếp tới TCB của Handler Task!
+    // Tương đương xSemaphoreGiveFromISR nhưng nhanh hơn 45% và 0 byte RAM phụ trợ!
+    vTaskNotifyGiveFromISR( xHandlerTask, &xHigherPriorityTaskWoken );
+
+    portYIELD_FROM_ISR( xHigherPriorityTaskWoken );
+}
+
+/* TÁC VỤ XỬ LÝ (HANDLER TASK) */
+static void vHandlerTask( void *pvParameters )
+{
+    for( ;; )
     {
-        vTaskNotifyGiveFromISR(xTaskToNotify, &xHigherPriorityTaskWoken);
-        portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+        // xClearCountOnExit = pdTRUE -> Hoạt động như Binary Semaphore!
+        // Chờ vô hạn cho đến khi có ngắt báo
+        ulTaskNotifyTake( pdTRUE, portMAX_DELAY );
+
+        // Thực hiện xử lý sự kiện ngắt...
+        vProcessPeriodicEvent();
+    }
+}
+
+int main( void )
+{
+    // Tạo Handler Task và lưu lại Handle xHandlerTask
+    xTaskCreate( vHandlerTask, "Handler", 1000, NULL, 3, &xHandlerTask );
+
+    vTaskStartScheduler();
+    for( ;; );
+}
+```
+
+---
+
+#### Thực Nghiệm 25: Thay Thế Counting Semaphore Chốt Sự Kiện Dồn Dập (Example 25)
+* **Vấn đề đặt ra:** Nếu các ngắt phần cứng xuất hiện dồn dập (Burst Interrupts) trong khi Handler Task đang bận xử lý, Binary Semaphore sẽ làm mất các sự kiện đến sau.
+* **Giải pháp trong Example 25:** Chỉ cần thay đổi duy nhất tham số `xClearCountOnExit = pdFALSE`!
+
+```c
+static void vCountingHandlerTask( void *pvParameters )
+{
+    uint32_t ulEventsToProcess;
+
+    for( ;; )
+    {
+        // xClearCountOnExit = pdFALSE -> Hoạt động như Counting Semaphore!
+        // Giá trị trả về cho biết số lượng sự kiện đang tồn đọng chưa xử lý!
+        ulEventsToProcess = ulTaskNotifyTake( pdFALSE, portMAX_DELAY );
+
+        if( ulEventsToProcess > 0 )
+        {
+            printf("Đang xử lý sự kiện! Số sự kiện còn tồn đọng: %lu\r\n", (unsigned long)ulEventsToProcess);
+            vProcessSingleEvent();
+        }
     }
 }
 ```
 
-#### <span style="color:#3498db">▸ 2. Driver Nhận UART (UART Receive Driver - Listing 156 pattern)</span>
+---
+
+### <span style="color:#1abc9c">3.8 Bộ API Đầy Đủ Tính Năng: xTaskNotify & xTaskNotifyWait</span>
+
 ```c
-// 📗 Nguồn: Mastering the FreeRTOS Real Time Kernel - Richard Barry
-void vUART_ReceiveTask(void *pvParameters)
+BaseType_t xTaskNotify(
+    TaskHandle_t  xTaskToNotify, // Handle của task nhận
+    uint32_t      ulValue,       // Giá trị 32-bit gửi đi
+    eNotifyAction eAction        // 1 trong 5 chế độ hành động
+);
+```
+
+#### Ma Trận 5 Chế Độ Hành Động Của `eNotifyAction`:
+
+| Chế Độ `eNotifyAction` | Hành Vi Trên `ulNotifiedValue` Của Task Nhận | Ứng Dụng Thay Thế Tương Đương |
+|---|---|---|
+| `eNoAction` | Giữ nguyên giá trị, chỉ chuyển trạng thái sang Pending. | **Binary Semaphore** (Chỉ cần tín hiệu). |
+| `eSetBits` | Thực hiện phép toán bitwise OR: `ulNotifiedValue |= ulValue`. | **Event Group** (Cờ bit sự kiện 32-bit). |
+| `eIncrement` | Tăng biến đếm: `ulNotifiedValue++`. Bỏ qua tham số `ulValue`. | **Counting Semaphore** (Chốt sự kiện). |
+| `eSetValueWithOverwrite` | Ghi đè vô điều kiện: `ulNotifiedValue = ulValue`. | **Mailbox** (Luôn cập nhật giá trị mới nhất). |
+| `eSetValueWithoutOverwrite` | Ghi giá trị NẾU giá trị trước đã được đọc; nếu chưa đọc thì thất bại và trả về `pdFAIL`. | **Hàng đợi 1 phần tử không ghi đè**. |
+
+#### Phân Tích Hàm Nhận Đa Năng `xTaskNotifyWait()`:
+
+```c
+BaseType_t xTaskNotifyWait(
+    uint32_t ulBitsToClearOnEntry, // Mặt nạ các bit cần xóa trước khi vào Blocked
+    uint32_t ulBitsToClearOnExit,  // Mặt nạ các bit cần xóa sau khi nhận được thông báo
+    uint32_t *pulNotificationValue,// Con trỏ nhận giá trị 32-bit trước khi bị ClearOnExit
+    TickType_t xTicksToWait        // Thời gian chờ tối đa
+);
+```
+
+---
+
+### <span style="color:#1abc9c">3.9 Thực Nghiệm STM32: Điều Khiển 3 LED Bằng Task Notifications (mainTaskNotifications.c)</span>
+
+Mã nguồn thực tế từ Brian Amos trên vi điều khiển STM32F767ZI:
+
+```c
+#include "FreeRTOS.h"
+#include "task.h"
+#include "main.h"
+#include "SEGGER_SYSVIEW.h"
+
+#define GREEN_LED   ( 1UL << 0 )
+#define BLUE_LED    ( 1UL << 1 )
+#define RED_LED     ( 1UL << 2 )
+
+static TaskHandle_t recvTaskHandle = NULL;
+
+static void recvTask_Notification(void* args)
 {
-    TimeOut_t xTimeOut;
-    TickType_t xTicksToWait = pdMS_TO_TICKS(500); // Đợi tối đa 500ms
-    
+    uint32_t notifyVal = 0;
+
     while(1)
     {
-        // Khởi tạo trạng thái timeout ban đầu
-        vTaskSetTimeOutState(&xTimeOut);
-        
-        // Vòng lặp chờ nhận đủ số byte yêu cầu (REQUIRED_BYTES)
-        while(BytesReceived() < REQUIRED_BYTES)
+        // 1. Chờ thông báo:
+        // ulBitsToClearOnEntry = 0 (không xóa gì trước khi chờ)
+        // ulBitsToClearOnExit = 0xFFFFFFFF (xóa sạch toàn bộ các bit sau khi đọc xong)
+        if(xTaskNotifyWait(0, 0xFFFFFFFF, &notifyVal, portMAX_DELAY) == pdPASS)
         {
-            // Kiểm tra xem đã hết timeout chưa?
-            if(xTaskCheckForTimeOut(&xTimeOut, &xTicksToWait) != pdFALSE)
+            // 2. Kiểm tra từng bit sự kiện nhận được:
+            if(notifyVal & GREEN_LED)
             {
-                // Đã bị timeout, xử lý lỗi tại đây
-                break;
+                HAL_GPIO_TogglePin(LED1_GPIO_Port, LED1_Pin);
+                SEGGER_SYSVIEW_Print("recvTask: Đảo trạng thái LED Xanh lá qua Notification Bit!");
             }
-            // Block chờ thêm byte mới (với thời gian chờ còn lại)
-            ulTaskNotifyTake(pdTRUE, xTicksToWait);
+            if(notifyVal & BLUE_LED)
+            {
+                HAL_GPIO_TogglePin(LED2_GPIO_Port, LED2_Pin);
+                SEGGER_SYSVIEW_Print("recvTask: Đảo trạng thái LED Xanh dương qua Notification Bit!");
+            }
+            if(notifyVal & RED_LED)
+            {
+                HAL_GPIO_TogglePin(LED3_GPIO_Port, LED3_Pin);
+                SEGGER_SYSVIEW_Print("recvTask: Đảo trạng thái LED Đỏ qua Notification Bit!");
+            }
         }
-        
-        // Xử lý dữ liệu nhận được sau vòng lặp...
     }
+}
+
+static void sendingTask_Notification(void* args)
+{
+    while(1)
+    {
+        // Báo bật LED Xanh lá
+        xTaskNotify(recvTaskHandle, GREEN_LED, eSetBits);
+        vTaskDelay(pdMS_TO_TICKS(200));
+
+        // Báo bật LED Xanh dương
+        xTaskNotify(recvTaskHandle, BLUE_LED, eSetBits);
+        vTaskDelay(pdMS_TO_TICKS(200));
+
+        // Báo bật LED Đỏ
+        xTaskNotify(recvTaskHandle, RED_LED, eSetBits);
+        vTaskDelay(pdMS_TO_TICKS(200));
+    }
+}
+
+int main(void)
+{
+    HAL_Init();
+    SystemClock_Config();
+    MX_GPIO_Init();
+
+    SEGGER_SYSVIEW_Conf();
+    SEGGER_SYSVIEW_Start();
+
+    // Tạo recvTask trước để lấy Handle
+    xTaskCreate(recvTask_Notification,    "recvTask", 128, NULL, 1, &recvTaskHandle);
+    xTaskCreate(sendingTask_Notification, "sendTask", 128, NULL, 1, NULL);
+
+    vTaskStartScheduler();
+    while(1);
 }
 ```
 
-#### <span style="color:#3498db">▸ 3. Driver Chuyển đổi ADC (ADC Conversion Driver - Listing 157 pattern)</span>
+---
+
+
+## <span style="color:#e67e22">4. Các Mẫu Thiết Kế Driver Thực Tế (Real-World Driver Patterns)</span>
+
+📗 *Nguồn tham chiếu: Mastering the FreeRTOS Real Time Kernel — Richard Barry (Chapter 9, Pages 340-354)*
+
+### <span style="color:#1abc9c">4.1 Driver Truyền Thông UART TX Không Đồng Bộ (Listing 155 Pattern)</span>
+
+Trong các driver giao tiếp truyền dữ liệu (UART, SPI, I2C), tác vụ khởi tạo việc truyền mảng ký tự và phải đợi cho đến khi phần cứng truyền xong byte cuối cùng. Thay vì polling cờ phần cứng `USART_SR_TC`, ta sử dụng Task Notification để ngủ tiết kiệm 100% CPU:
+
 ```c
-// 📗 Nguồn: Mastering the FreeRTOS Real Time Kernel - Richard Barry
-void vADC_ISR(void)
+static TaskHandle_t xTaskToNotifyOnTxComplete = NULL;
+
+BaseType_t xUART_Send( UART_t *xUART, const uint8_t *pucBuffer, size_t xBufferLength, TickType_t xMaxBlockTime )
+{
+    BaseType_t xReturn = pdPASS;
+
+    // 1. Lưu lại Handle của chính tác vụ đang gọi hàm truyền
+    xTaskToNotifyOnTxComplete = xTaskGetCurrentTaskHandle();
+
+    // 2. Xóa sạch mọi thông báo tồn đọng trước đó (nếu có)
+    ulTaskNotifyTake( pdTRUE, 0 );
+
+    // 3. Khởi động phần cứng truyền UART (bằng DMA hoặc kích hoạt ngắt TXE)
+    vStartHardwareTransmission( xUART, pucBuffer, xBufferLength );
+
+    // 4. Block tác vụ chờ ngắt phần cứng báo truyền xong
+    if( ulTaskNotifyTake( pdTRUE, xMaxBlockTime ) == 0 )
+    {
+        // Quá hạn xMaxBlockTime mà ngắt TX Complete chưa báo -> Lỗi ngoại vi!
+        xReturn = pdFAIL;
+    }
+
+    // 5. Thu hồi con trỏ bảo vệ
+    xTaskToNotifyOnTxComplete = NULL;
+
+    return xReturn;
+}
+
+// HÀM NGẮT PHẦN CỨNG UART TX COMPLETE
+void USART1_TX_IRQHandler( void )
 {
     BaseType_t xHigherPriorityTaskWoken = pdFALSE;
-    uint32_t ulConversionResult = ADC_ReadData(); // Đọc kết quả ADC
-    
-    // Gửi giá trị ADC, không ghi đè nếu Task chưa kịp đọc
-    xTaskNotifyFromISR(xADCTaskHandle, 
-                       ulConversionResult, 
-                       eSetValueWithoutOverwrite, 
-                       &xHigherPriorityTaskWoken);
-                       
-    // Yêu cầu chuyển đổi ngữ cảnh nếu cần
-    portYIELD_FROM_ISR(xHigherPriorityTaskWoken);
+
+    if( USART1->SR & USART_SR_TC )
+    {
+        // Xóa cờ ngắt phần cứng
+        USART1->SR &= ~USART_SR_TC;
+
+        // Đánh thức trực tiếp tác vụ đang đợi truyền xong!
+        if( xTaskToNotifyOnTxComplete != NULL )
+        {
+            vTaskNotifyGiveFromISR( xTaskToNotifyOnTxComplete, &xHigherPriorityTaskWoken );
+        }
+
+        portYIELD_FROM_ISR( xHigherPriorityTaskWoken );
+    }
+}
+```
+
+---
+
+### <span style="color:#1abc9c">4.2 Driver Nhận UART RX Kèm Cơ Chế Kiểm Tra Timeout Liên Tục (Listing 156 Pattern)</span>
+
+Khi nhận một gói tin gồm nhiều byte từ UART, khoảng cách giữa các byte có thể bị trễ. Nếu sử dụng `ulTaskNotifyTake()` thông thường với thời gian chờ cố định trong vòng lặp `while(bytesRead < totalBytes)`, thời gian timeout sẽ bị **reset lại từ đầu sau mỗi byte nhận được**, khiến tổng thời gian chờ có thể kéo dài vô tận nếu luồng dữ liệu bị chậm!
+
+FreeRTOS cung cấp cấu trúc `TimeOut_t` kết hợp hai hàm `vTaskSetTimeOutState()` và `xTaskCheckForTimeOut()` để quản lý **thời gian chờ tổng thể (Overall Bounded Timeout)**:
+
+```c
+static TaskHandle_t xTaskToNotifyOnRxByte = NULL;
+
+size_t xUART_Receive( uint8_t *pucBuffer, size_t uxBytesToRead, TickType_t xTicksToWait )
+{
+    size_t uxBytesReceived = 0;
+    TimeOut_t xTimeOut;
+
+    xTaskToNotifyOnRxByte = xTaskGetCurrentTaskHandle();
+    ulTaskNotifyTake( pdTRUE, 0 ); // Xóa thông báo cũ
+
+    // 1. Ghi lại trạng thái thời gian bắt đầu
+    vTaskSetTimeOutState( &xTimeOut );
+
+    while( ( uxBytesReceived < uxBytesToRead ) && 
+           ( xTaskCheckForTimeOut( &xTimeOut, &xTicksToWait ) == pdFALSE ) )
+    {
+        // 2. Chờ ngắt RXNE báo có byte mới (xTicksToWait tự động bị giảm trừ thời gian đã trôi qua)
+        if( ulTaskNotifyTake( pdTRUE, xTicksToWait ) != 0 )
+        {
+            pucBuffer[ uxBytesReceived ] = ucReadHardwareRxRegister();
+            uxBytesReceived++;
+        }
+    }
+
+    xTaskToNotifyOnRxByte = NULL;
+    return uxBytesReceived;
+}
+```
+
+---
+
+### <span style="color:#1abc9c">4.3 Driver Chuyển Đổi ADC Chuyển Kết Quả Trực Tiếp Từ Ngắt (Listing 157 Pattern)</span>
+
+Trong hệ thống thu thập tín hiệu, ngắt chuyển đổi ADC (End of Conversion) cần gửi giá trị đo được (12-bit hoặc 16-bit) cho Processing Task.
+Thay vì tạo một Queue 1 phần tử tốn RAM:
+* ISR sử dụng `xTaskNotifyFromISR()` với chế độ **`eSetValueWithoutOverwrite`**.
+* Dữ liệu ADC được ghi thẳng vào trường `ulNotifiedValue` của Processing Task!
+
+```c
+static TaskHandle_t xAdcProcessingTask = NULL;
+
+// HÀM NGẮT CHUYỂN ĐỔI ADC HOÀN TẤT
+void ADC1_IRQHandler( void )
+{
+    BaseType_t xHigherPriorityTaskWoken = pdFALSE;
+    uint32_t ulAdcValue;
+
+    if( ADC1->SR & ADC_SR_EOC )
+    {
+        ulAdcValue = ADC1->DR; // Đọc giá trị chuyển đổi từ thanh ghi phần cứng
+
+        // Ghi thẳng giá trị ADC vào TCB của Processing Task!
+        xTaskNotifyFromISR(
+            xAdcProcessingTask,
+            ulAdcValue,
+            eSetValueWithoutOverwrite, // Không ghi đè nếu mẫu trước chưa đọc
+            &xHigherPriorityTaskWoken
+        );
+
+        portYIELD_FROM_ISR( xHigherPriorityTaskWoken );
+    }
 }
 
-void vADC_ProcessingTask(void *pvParameters)
+// TÁC VỤ XỬ LÝ SỐ LIỆU ADC
+void vAdcTask( void *pvParameters )
 {
-    uint32_t ulADCValue;
-    while(1)
+    uint32_t ulConvertedValue;
+
+    for( ;; )
     {
-        // Chờ nhận thông báo, lưu vào ulADCValue, không xóa bit nào lúc vào và ra
-        if(xTaskNotifyWait(0, 0, &ulADCValue, portMAX_DELAY) == pdPASS)
+        // ulBitsToClearOnEntry = 0, ulBitsToClearOnExit = 0
+        // Đọc nguyên vẹn giá trị 32-bit vào biến ulConvertedValue
+        if( xTaskNotifyWait( 0, 0, &ulConvertedValue, portMAX_DELAY ) == pdPASS )
         {
-            // Xử lý giá trị ulADCValue thành công
+            vProcessDspFilter( ulConvertedValue );
         }
     }
 }
 ```
 
-#### <span style="color:#3498db">▸ 4. Giao tiếp Server Cloud (Cloud Server Communication - Listing 158-162 pattern)</span>
-Mô hình: Yêu cầu gửi qua Queue (Nhiều clients → 1 server task), Phản hồi thông qua Task Notification (Server → Task client cụ thể).
+---
+
+### <span style="color:#1abc9c">4.4 Mô Hình Client-Server Hai Chiều: Request Qua Queue, Response Qua Notification</span>
+
+📗 *Nguồn: Richard Barry (Listing 158 - 162)*
+
+Trong các hệ thống phân tán phức tạp (như tác vụ Quản lý Kết nối Cloud / Server Task phục vụ hàng chục tác vụ Client):
+* **Chiều đi (Client $ightarrow$ Server):** Nhiều Client gửi yêu cầu vào một Queue dùng chung của Server.
+* **Chiều về (Server $ightarrow$ Client):** Nếu mỗi Client tạo một Queue riêng để đợi phản hồi từ Server $ightarrow$ Hệ thống sẽ tốn hàng chục Queue, lãng phí hàng kilobyte RAM!
+
+#### Giải Pháp Kiến Trúc Tối Ưu:
+Client đính kèm **Task Handle của chính nó (`xTaskGetCurrentTaskHandle()`)** vào gói tin yêu cầu. Server sau khi xử lý xong sẽ gửi kết quả phản hồi **TRỰC TIẾP VÀO TCB CỦA CLIENT ĐÓ** qua Task Notification!
 
 ```c
-// 📗 Nguồn: Mastering the FreeRTOS Real Time Kernel - Richard Barry
-#define SEND_SUCCESSFUL_BIT       ( 1UL << 0 ) // Bit 0 báo thành công
-#define OPERATION_TIMED_OUT_BIT   ( 1UL << 1 ) // Bit 1 báo timeout
+// Cấu trúc yêu cầu gửi lên Server:
+typedef struct {
+    TaskHandle_t xClientTask; // Handle của tác vụ Client để Server biết gửi trả cho ai
+    uint32_t     ulRequestData;
+} ServerRequest_t;
 
-// Phía Client:
-void vCloudClientTask(void *pvParameters)
+// PHÍA CLIENT: Gửi yêu cầu và ngủ chờ phản hồi
+uint32_t ulSendRequestToServer( uint32_t ulData )
 {
-    CloudRequest_t xRequest;
-    uint32_t ulStatusFlags;
-    
-    // Đóng gói request cùng handle của client này
-    xRequest.xClientHandle = xTaskGetCurrentTaskHandle();
-    xRequest.pData = myData;
-    
-    // Gửi yêu cầu qua Queue chung
-    xQueueSend(xCloudQueue, &xRequest, portMAX_DELAY);
-    
-    // Chờ cờ trạng thái phản hồi từ Server (dùng eSetBits pattern)
-    // Sẽ xóa các bit này lúc thoát
-    xTaskNotifyWait(0, (SEND_SUCCESSFUL_BIT | OPERATION_TIMED_OUT_BIT), 
-                    &ulStatusFlags, pdMS_TO_TICKS(5000));
+    ServerRequest_t xReq;
+    uint32_t ulResponseResult = 0;
+
+    xReq.xClientTask   = xTaskGetCurrentTaskHandle(); // Đính kèm Handle của mình
+    xReq.ulRequestData = ulData;
+
+    // Gửi yêu cầu vào Queue dùng chung của Server
+    xQueueSend( xServerQueue, &xReq, portMAX_DELAY );
+
+    // Ngủ chờ Server phản hồi trực tiếp vào TCB của mình!
+    xTaskNotifyWait( 0, 0xFFFFFFFF, &ulResponseResult, portMAX_DELAY );
+
+    return ulResponseResult;
 }
 
-// Phía Server (CloudWrite):
-void vCloudServerTask(void *pvParameters)
+// PHÍA SERVER: Xử lý và gửi trả trực tiếp
+void vServerTask( void *pvParameters )
 {
-    CloudRequest_t xRequest;
-    while(1)
+    ServerRequest_t xReceivedReq;
+    uint32_t ulComputedResult;
+
+    for( ;; )
     {
-        // Chờ nhận yêu cầu từ Queue
-        xQueueReceive(xCloudQueue, &xRequest, portMAX_DELAY);
-        
-        // Thực hiện kết nối mạng, gửi dữ liệu lên Cloud...
-        
-        // Gửi trả status cho đúng Client đã request bằng eSetBits
-        xTaskNotify(xRequest.xClientHandle, 
-                    SEND_SUCCESSFUL_BIT, 
-                    eSetBits);
+        // Nhận yêu cầu từ bất kỳ Client nào
+        xQueueReceive( xServerQueue, &xReceivedReq, portMAX_DELAY );
+
+        // Xử lý dịch vụ...
+        ulComputedResult = prvProcessCloudTransaction( xReceivedReq.ulRequestData );
+
+        // BẮN KẾT QUẢ THẲNG VÀO TCB CỦA CLIENT GỌI YÊU CẦU!
+        xTaskNotify( xReceivedReq.xClientTask, ulComputedResult, eSetValueWithOverwrite );
     }
 }
 ```
 
-### <span style="color:#1abc9c">3.7 Bảng So sánh Toàn diện (Comprehensive Comparison Table)</span>
-
-| Tính năng | Task Notifications | FreeRTOS Queues | Semaphores | Event Groups |
-|---|---|---|---|---|
-| **Tốc độ (Speed)** | Nhanh nhất (Fastest) | Chậm nhất (Slowest) | Nhanh (Fast) | Trung bình (Medium) |
-| **Tiêu thụ RAM** | 8 Bytes (Sẵn có trong TCB) | Cao (Tùy số lượng/kích thước) | Trung bình | Thấp / Trung bình |
-| **Khởi tạo (Creation)** | Không cần (Zero-init) | Bắt buộc (`xQueueCreate`) | Bắt buộc (`xSemaphoreCreate`) | Bắt buộc (`xEventGroupCreate`) |
-| **Số Task gửi (Senders)** | Nhiều (Multiple) | Nhiều (Multiple) | Nhiều (Multiple) | Nhiều (Multiple) |
-| **Số Task nhận (Receivers)** | **Chỉ 1 Task chỉ định** | Nhiều (Multiple) | Nhiều (Multiple) | Nhiều (Multiple) |
-| **Phát sóng (Broadcast)** | ❌ Không hỗ trợ | ❌ Không hỗ trợ | ❌ Không hỗ trợ | ✅ Có hỗ trợ |
-| **Khả năng đệm (Buffering)**| ❌ Chỉ 1 giá trị 32-bit | ✅ Hỗ trợ đệm nhiều phần tử | ❌ Không / Tối đa = max count | ❌ Không hỗ trợ |
-| **Gửi từ ngắt (ISR Support)**| ✅ Hỗ trợ (`*FromISR`) | ✅ Hỗ trợ | ✅ Hỗ trợ | ✅ Hỗ trợ |
-| **Priority Inheritance** | ❌ Không hỗ trợ | ❌ Không hỗ trợ | ✅ Chỉ Mutex | ❌ Không hỗ trợ |
-
-### <span style="color:#1abc9c">3.8 Các Thực hành Tốt nhất (Best Practices)</span>
 > [!TIP]
-> - **Sử dụng làm mặc định (DEFAULT)** cho việc đồng bộ 1-1 (luôn ưu tiên thay vì dùng semaphores).
-> - Chỉ **chuyển sang Queues/Semaphores** khi Task Notifications chạm tới các giới hạn (ví dụ: cần nhiều task nhận, hoặc cần đệm lượng dữ liệu lớn).
-> - **Xóa các thông báo cũ (stale notifications)** trước khi block chờ một sự kiện mới để tránh lấy sai tín hiệu cũ: `ulTaskNotifyTake(pdTRUE, 0)`.
-> - **Sử dụng timeout có giới hạn** để phát hiện lỗi trong các mô hình driver (tránh việc chờ vô tận).
+> **Ưu Điểm Kiến Trúc:**
+> Toàn bộ hệ thống Client-Server chỉ tiêu tốn duy nhất **1 Queue** (chiều đi) và **0 Queue cho chiều về**. Tiết kiệm bộ nhớ tối đa và tốc độ phản hồi cực kỳ nhanh!
 
 ---
 
-[⬅️ Chương trước: Chương 8](#) | [Chương tiếp theo: Chương 10 ➡️](#)
+
+## <span style="color:#e67e22">5. Bảng So Sánh Toàn Diện Giữa 4 Primitive Giao Tiếp FreeRTOS</span>
+
+| Tiêu Chí Kỹ Thuật | Task Notification | RTOS Queue | Semaphore (Binary / Counting) | Event Group |
+|---|---|---|---|---|
+| **Tốc độ thực thi** | 🚀 **Nhanh nhất (Nhanh hơn ~45%)** | Tiêu chuẩn | Rất nhanh | Nhanh |
+| **Chi phí RAM phụ trợ**| 🌟 **0 BYTES (Tích hợp trong TCB)** | Cao (~76-80B + Storage Buffer) | Trung bình (~76-80B cho Queue Header) | Rất thấp (~32 bytes) |
+| **Số lượng bên gửi** | Không giới hạn (Nhiều Task / ISR) | Không giới hạn | Không giới hạn | Không giới hạn |
+| **Số lượng bên nhận** | ❌ **Chỉ DUY NHẤT 1 Task** | Nhiều Task (Cạnh tranh FIFO) | Nhiều Task (Cạnh tranh) | ✅ **Nhiều Task cùng lúc (Broadcast)** |
+| **Khả năng Broadcast** | ❌ Không | ❌ Không | ❌ Không | ✅ **CÓ (Đánh thức tất cả task)** |
+| **Đệm nhiều phần tử**| ❌ Không (Chỉ 1 giá trị 32-bit) | ✅ **CÓ (Mảng đệm FIFO)** | ❌ Không (Chỉ có biến đếm) | ❌ Không |
+| **Dữ liệu truyền tải** | Giá trị số 32-bit hoặc Bitmask | Bất kỳ struct, mảng, pointer nào | Không có dữ liệu (Chỉ có Token) | Cờ bit nhị phân (24 bits) |
+| **ISR gửi được không?**| ✅ Có (`*FromISR`) | ✅ Có (`*FromISR`) | ✅ Có (`*FromISR`) | ✅ Có (Chuyển giao Daemon) |
+| **ISR nhận được không?**| ❌ **CẤM (ISR không có TCB)** | ✅ Có (`xQueueReceiveFromISR`) | ❌ Không (ISR không bao giờ block) | ❌ Không |
+| **Bên gửi có thể Block?**| ❌ Không (Gửi luôn thoát ngay) | ✅ **CÓ (Block nếu Queue đầy)** | ❌ Không | ❌ Không |
 
 ---
 
-## <span style="color:#e67e22">4. Tổng kết & Câu hỏi Ôn tập — Summary & Review Questions</span>
+## <span style="color:#e67e22">6. Câu Hỏi Ôn Tập Chuyên Sâu Có Đáp Án Chi Tiết</span>
 
-### <span style="color:#1abc9c">4.1 Bảng tổng hợp các API trong Chương 9</span>
+### Nhóm 1: Câu Hỏi Thực Nghiệm Từ Sách Brian Amos (Chapter 9)
 
-| Hàm API FreeRTOS | Header | Mục đích sử dụng |
-| :--- | :--- | :--- |
-| `xQueueCreate(length, size)` | `queue.h` | Khởi tạo Queue trên FreeRTOS Heap. |
-| `xQueueSend(queue, &item, ticks)` | `queue.h` | Gửi phần tử vào đuôi Queue (FIFO). |
-| `xQueueReceive(queue, &buffer, ticks)` | `queue.h` | Rút phần tử khỏi đầu Queue. |
-| `xTaskNotify(handle, value, action)` | `task.h` | Gửi Direct Task Notification kèm hành động `eNotifyAction`. |
-| `ulTaskNotifyTake(clearOnExit, ticks)` | `task.h` | Nhận Notification kiểu Semaphore (đọc và giảm/clear value). |
-| `xTaskNotifyWait(entry, exit, &val, ticks)`| `task.h` | Nhận Notification kiểu Bitmask hoặc giá trị đầy đủ. |
+**Câu 1: Các kiểu dữ liệu nào có thể được truyền vào Queue?**
+* *Trả lời:* **Bất kỳ kiểu dữ liệu nào trong ngôn ngữ C!** Từ các kiểu số nguyên cơ bản (`uint8_t`, `int32_t`, `float`), enum, cấu trúc dữ liệu (`struct`), mảng tĩnh, cho đến các con trỏ trỏ tới các khối dữ liệu khổng lồ trong bộ nhớ. Kích thước phần tử được định nghĩa thông qua tham số `uxItemSize` khi gọi `xQueueCreate()`.
+
+**Câu 2: Chuyện gì xảy ra với Task khi nó cố thao tác trên Queue trong lúc chờ đợi?**
+* *Trả lời:* Khi tác vụ gọi `xQueueReceive()` trên Queue rỗng hoặc `xQueueSend()` trên Queue đầy với thời gian chờ `xTicksToWait > 0`, nó sẽ được Scheduler chuyển ngay sang trạng thái **Blocked**. Tác vụ hoàn toàn rút khỏi CPU và không tiêu tốn chu kỳ thực thi nào cho đến khi điều kiện hàng đợi được đáp ứng hoặc hết thời hạn timeout.
+
+**Câu 3: Nêu một lưu ý quan trọng cần cân nhắc khi truyền dữ liệu qua Queue bằng Tham chiếu (Pass by Reference)?**
+* *Trả lời:* Dữ liệu bên dưới được trỏ tới **BẮT BUỘC PHẢI DUY TRÌ SỰ TỒN TẠI HỢP LỆ TRONG BỘ NHỚ** (phải là biến toàn cục/static hoặc cấp phát động từ Heap). Tuyệt đối **không được trỏ vào biến cục bộ trên Stack**, vì khi hàm gửi thoát ra, vùng nhớ Stack sẽ bị thu hồi và ghi đè bởi hàm khác, dẫn đến lỗi con trỏ treo (Dangling Pointer) và gây sập chip (HardFault)! Ngoài ra, bên gửi phải từ bỏ quyền sửa đổi dữ liệu sau khi gửi.
+
+**Câu 4: "Direct Task Notifications có thể thay thế hoàn toàn Queues trong mọi thiết kế." Nhận định này Đúng hay Sai? Tại sao?**
+* *Trả lời:* **SAI HOÀN TOÀN!** Task Notifications chỉ có thể gửi trực tiếp tới một tác vụ duy nhất và không thể đệm một luồng nhiều phần tử liên tiếp (không có bộ đệm FIFO). Nếu cần truyền dữ liệu giữa nhiều Producer tới một Consumer có lưu trữ đệm, hoặc cần truyền khối dữ liệu lớn, hàng đợi Queue vẫn là công cụ bắt buộc.
+
+**Câu 5: "Direct Task Notifications có thể gửi dữ liệu thuộc bất kỳ kiểu nào." Nhận định này Đúng hay Sai? Tại sao?**
+* *Trả lời:* **SAI!** Trường thông báo `ulNotifiedValue` bên trong TCB được cố định cứng là kiểu số nguyên không dấu 32-bit (`uint32_t`). Nó chỉ có thể chứa trực tiếp số nguyên 32-bit, mặt nạ cờ bit (Bitmask) hoặc một con trỏ 32-bit. Nó không thể trực tiếp chứa một cấu trúc `struct` lớn hay chuỗi ký tự mà không dùng con trỏ.
+
+**Câu 6: Những ưu điểm cốt lõi của Direct Task Notifications so với Queue là gì?**
+* *Trả lời:* Có 2 ưu điểm vượt trội:
+  1. **Tốc độ thực thi vượt trội:** Nhanh hơn khoảng 45% (chỉ mất ~20-30 chu kỳ CPU so với 70-100 chu kỳ của Queue).
+  2. **Tiết kiệm RAM tuyệt đối:** Tiêu tốn 0 byte RAM phụ trợ vì 2 trường dữ liệu đã được nhúng sẵn bên trong cấu trúc TCB của tác vụ từ khi khởi tạo.
+
+---
+
+### Nhóm 2: Câu Hỏi Kiến Trúc Chuyên Sâu Từ Sách Richard Barry (Chapter 9)
+
+**Câu 7: Tại sao Task Notifications lại có tốc độ thực thi nhanh hơn khoảng 45% so với Queue hay Semaphore?**
+* *Trả lời:* Vì Queue và Semaphore hoạt động dựa trên cấu trúc danh sách sự kiện hai chiều (`xTasksWaitingToSend` và `xTasksWaitingToReceive`). Mỗi khi gửi hoặc nhận, kernel phải thực hiện các thuật toán tìm kiếm, duyệt danh sách, khóa Critical Section và chép dữ liệu qua mảng đệm nội bộ. Ngược lại, Task Notification can thiệp trực tiếp vào các trường nằm ngay trong TCB của tác vụ đích đã biết trước Handle, loại bỏ hoàn toàn các bước duyệt danh sách trung gian.
+
+**Câu 8: Giải thích sự khác biệt giữa hai chế độ `xClearCountOnExit = pdTRUE` và `pdFALSE` trong hàm `ulTaskNotifyTake()`.**
+* *Trả lời:*
+  * Khi đặt `= pdTRUE`: Giá trị `ulNotifiedValue` bị xóa sạch về 0 ngay khi hàm trả về. Cơ chế này mô phỏng chính xác hành vi của **Binary Semaphore**.
+  * Khi đặt `= pdFALSE`: Giá trị `ulNotifiedValue` chỉ bị trừ đi 1 đơn vị (`ulNotifiedValue--`). Cơ chế này mô phỏng hoàn hảo hành vi của **Counting Semaphore**, cho phép chốt và lưu giữ chính xác số lượng sự kiện ngắt dồn dập (Burst Events) mà không bị mất mát.
+
+**Câu 9: Làm thế nào để Task Notification mô phỏng hoàn hảo một Event Group 32-bit?**
+* *Trả lời:* Bên gửi sử dụng hàm `xTaskNotify(xTask, ulBitMask, eSetBits)`. Lệnh này thực hiện phép toán bitwise OR (`ulNotifiedValue |= ulBitMask`). Bên nhận sử dụng hàm `xTaskNotifyWait(ulBitsToClearOnEntry, ulBitsToClearOnExit, &pulValue, timeout)` để lọc và đọc các bit cờ sự kiện, hoàn toàn thay thế được Event Group mà không tốn thêm byte RAM nào!
+
+**Câu 10: Phân tích ưu điểm của mô hình Client-Server kết hợp Queue (chiều đi) và Task Notification (chiều phản hồi).**
+* *Trả lời:* Mô hình này giải quyết triệt để vấn đề cạn kiệt RAM:
+  * Nhiều Client có thể thoải mái gửi yêu cầu vào một Queue dùng chung của Server (Many-to-One).
+  * Trong gói yêu cầu, Client đính kèm Handle của chính nó (`xTaskGetCurrentTaskHandle()`).
+  * Server sau khi xử lý xong sẽ gửi kết quả phản hồi thẳng vào TCB của Client đó qua `xTaskNotify()`.
+  * Nhờ vậy, hệ thống hoàn toàn **không cần tạo các Queue phản hồi riêng lẻ cho từng Client (Zero Return Queues)**, tiết kiệm hàng kilobyte RAM quý giá của vi điều khiển!
 
 ---
 
-### <span style="color:#1abc9c">4.2 Đáp án Câu hỏi Ôn tập từ Sách (Review Questions & Answers)</span>
+## <span style="color:#e67e22">7. 📌 Tóm Tắt Khắc Cốt Ghi Tâm (Key Takeaways)</span>
 
-#### Câu 1: Các kiểu dữ liệu nào có thể được truyền vào Queue?
-> **Đáp án:** **BẤT KỲ KIỂU DỮ LIỆU NÀO** (từ `uint8_t`, `int`, `float`, các cấu trúc `struct` phức tạp, cho đến các con trỏ `pointer`). Vì hàm Queue nhận tham số kiểu `void*` và kích thước byte cố định lúc tạo.
+```
+========================================================================================================
+                          BẢN ĐỒ CHIẾN LƯỢC TRUYỀN THÔNG LIÊN TÁC VỤ
+========================================================================================================
 
-#### Câu 2: Chuyện gì xảy ra với Task khi nó cố thao tác trên Queue trong lúc chờ đợi?
-> **Đáp án:** Task sẽ chuyển sang trạng thái **`BLOCKED` (Đi ngủ 💤)** và tiêu thụ **0% CPU** cho đến khi có dữ liệu trong Queue (nếu đọc) / có chỗ trống trong Queue (nếu gửi) hoặc cho đến khi hết thời gian Timeout.
+ 1. QUY TẮC CHỌN CƠ CHẾ TRUYỀN THÔNG (IPC SELECTION HIERARCHY):
+    ├── ƯU TIÊN SỐ 1 (MẶC ĐỊNH): Luôn cân nhắc TASK NOTIFICATIONS trước tiên!
+    │   └── Nhanh hơn 45%, 0 byte RAM phụ trợ, thay thế hoàn hảo Binary Sem, Counting Sem, Event Group 1-1.
+    ├── DÙNG QUEUE KHI:
+    │   ├── Cần đệm dữ liệu (FIFO Buffer nhiều phần tử).
+    │   ├── Dữ liệu là struct hoặc mảng bytes.
+    │   └── Có nhiều bên nhận (Multiple Consumers tranh chấp).
+    └── DÙNG EVENT GROUP KHI:
+        └── Cần BROADCAST phát sóng đánh thức đồng thời nhiều task.
 
-#### Câu 3: Nêu một lưu ý quan trọng cần cân nhắc khi truyền dữ liệu qua Queue bằng Tham chiếu (Pass by Reference)?
-> **Đáp án:** Dữ liệu gốc **KHÔNG ĐƯỢC NẰM TRÊN STACK** (không dùng biến cục bộ hàm). Vùng nhớ được trỏ đến phải tồn tại cố định trên RAM trong suốt quá trình xử lý (dùng biến `global`, `static`, hoặc cấp phát động `pvPortMalloc`). Đồng thời phải làm rõ Quyền sở hữu dữ liệu (Data Ownership) để free RAM đúng lúc.
+ 2. COPY-BY-VALUE vs QUEUING POINTERS:
+    ├── Dữ liệu nhỏ (<= 16 bytes): Copy-by-Value (An toàn bộ nhớ, zero race conditions).
+    ├── Dữ liệu lớn (> 32 bytes): Queuing Pointers (Tiết kiệm 98% RAM queue, tốc độ O(1)).
+    └── BẮT BUỘC: Tuân thủ mô hình Ownership Transfer và KHÔNG TRỎ VÀO LOCAL STACK!
 
-#### Câu 4: Direct Task Notifications có thể thay thế hoàn toàn Queues: Đúng hay Sai?
-> **Đáp án:** **FALSE (Sai)**. Direct Task Notifications chỉ có thể gửi đến **1 Task duy nhất**, chỉ chứa 1 giá trị 32-bit và không có khả năng đệm nhiều phần tử như Queue.
+ 3. 5 GIỚI HẠN VÀNG CỦA TASK NOTIFICATIONS:
+    ├── Chỉ có 1 task nhận.
+    ├── ISR không thể là bên nhận.
+    ├── Chỉ chứa 1 giá trị 32-bit (không FIFO).
+    ├── Không thể gửi hàng loạt trong 1 lệnh.
+    └── Bên gửi không thể bị Blocked.
 
-#### Câu 5: Direct Task Notifications có thể gửi dữ liệu thuộc bất kỳ kiểu nào: Đúng hay Sai?
-> **Đáp án:** **FALSE (Sai)**. Direct Task Notifications bị giới hạn chỉ truyền duy nhất **1 giá trị số nguyên 32-bit (`uint32_t`)** (hoặc các Bitmask).
-
-#### Câu 6: Những ưu điểm của Direct Task Notifications so với Queue là gì?
-> **Đáp án:** 
-> 1. **Tốc độ thực thi nhanh hơn từ 25% đến 45%**.
-> 2. **Không tốn tài nguyên RAM overhead** (vì tận dụng giá trị sẵn có trong TCB của Task nhận).
-> 3. Cung cấp các chế độ thao tác Bitwise (`eSetBits`), Tăng giá trị (`eIncrement`), hoặc Ghi đè (`eSetValueWithOverwrite`) rất linh hoạt.
-
----
+ 4. 5 CHẾ ĐỘ eNotifyAction ĐA NĂNG:
+    ├── eNoAction: Báo cờ tín hiệu (Binary Semaphore).
+    ├── eSetBits: Bật cờ sự kiện bitwise OR (Event Group).
+    ├── eIncrement: Tăng biến đếm chốt sự kiện (Counting Semaphore).
+    ├── eSetValueWithOverwrite: Ghi đè trạng thái mới nhất (Mailbox).
+    └── eSetValueWithoutOverwrite: Hàng đợi 1 phần tử an toàn (Fail nếu chưa đọc).
+========================================================================================================
+```
