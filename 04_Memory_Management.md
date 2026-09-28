@@ -142,6 +142,38 @@ Bước 3: Cấp phát Item 8 (cần 80B) → THẤT BẠI!
 
 ---
 
+### <span style="color:#1abc9c">1.5 Bảy Lý do Tại sao `malloc()` và `free()` Tiêu chuẩn Bị Cấm trong Hệ thống Nhúng</span>
+📗 *Nguồn: Mastering the FreeRTOS Real Time Kernel — Richard Barry (Section 2.1)*
+
+Nhiều lập trình viên xuất thân từ lập trình phần mềm máy tính (Desktop/Server) thường quen tay gọi `malloc()` và `free()` của thư viện C chuẩn. Tuy nhiên, Richard Barry nhấn mạnh **7 lý do tại sao các hàm này không phù hợp cho hệ thống Real-Time nhúng**:
+
+1. **Không phải lúc nào cũng có sẵn:** Trên các vi điều khiển nhỏ không có hệ điều hành hoặc dùng bộ biên dịch tinh gọn (Embedded C Runtime), thư viện cấp phát động có thể bị lược bỏ hoàn toàn.
+2. **Kích thước mã nhị phân (Code footprint) quá lớn:** Việc liên kết thư viện `malloc()` tiêu chuẩn sẽ kéo theo hàng kilobyte mã nguồn hỗ trợ, chiếm dụng phần bộ nhớ Flash quý giá của MCU.
+3. **Hiếm khi an toàn luồng (Rarely Thread-Safe):** Hàm `malloc()` của thư viện C chuẩn không được thiết kế cho môi trường đa nhiệm. Nếu hai Task hoặc một Task và một ISR cùng gọi `malloc()` đồng thời, cấu trúc bảng quản lý heap sẽ bị phá hỏng ngay lập tức (Heap Corruption).
+4. **Không tất định về thời gian (Non-Deterministic Execution Time):** Thời gian thực thi của `malloc()` phụ thuộc vào tình trạng phân mảnh của bộ nhớ lúc đó. Nó có thể mất 10 chu kỳ xung nhịp nếu gặp khối trống ngay, nhưng cũng có thể mất hàng ngàn chu kỳ để quét qua toàn bộ danh sách liên kết $ightarrow$ Phá vỡ tính thời gian thực (Hard Real-Time).
+5. **Dễ gây phân mảnh bộ nhớ nghiêm trọng (Severe Fragmentation):** Trong các ứng dụng nhúng chạy liên tục nhiều tháng hoặc nhiều năm, việc liên tục cấp phát và giải phóng các khối nhớ kích thước biến thiên sẽ tạo ra hàng ngàn "lỗ thủng" nhỏ. Cuối cùng, hệ thống sẽ sập vì không tìm được khối nhớ liên tục, dù tổng dung lượng RAM trống còn rất nhiều.
+6. **Làm phức tạp hóa việc cấu hình Linker Script:** Linker phải dự trữ một vùng nhớ riêng cho Heap của C runtime, dễ dẫn đến xung đột với vùng nhớ Stack của vi điều khiển.
+7. **Cực kỳ khó debug khi xảy ra va chạm vùng nhớ:** Nếu Heap phát triển tràn lên vùng nhớ của Stack (hiện tượng Stack-Heap Collision qua lệnh gọi `_sbrk`), dữ liệu của các biến cục bộ và biến toàn cục sẽ bị ghi đè ngầm mà không có bất kỳ thông báo lỗi nào.
+
+---
+
+### <span style="color:#1abc9c">1.6 Căn lề Byte (Byte Alignment) & Rủi ro Lỗi Phần cứng trên ARM Cortex-M</span>
+📗 *Nguồn: Mastering the FreeRTOS Real Time Kernel — Richard Barry (Section 2.1)*
+
+Trên các kiến trúc vi xử lý 32-bit như ARM Cortex-M, phần cứng truy xuất bộ nhớ hiệu quả nhất khi địa chỉ biến là bội số của kích thước dữ liệu (ví dụ biến 32-bit nằm ở địa chỉ chia hết cho 4, biến 64-bit nằm ở địa chỉ chia hết cho 8).
+
+* **Định nghĩa trong `portmacro.h`:**
+  ```c
+  #define portBYTE_ALIGNMENT          8   // Căn lề 8-byte cho ARM Cortex-M
+  #define portBYTE_ALIGNMENT_MASK     ( 0x0007 )
+  ```
+* **Cơ chế của FreeRTOS:**
+  * Nếu một Task yêu cầu `pvPortMalloc( 5 )` (5 bytes), FreeRTOS sẽ tự động làm tròn lên thành **8 bytes** để đảm bảo con trỏ trả về luôn chia hết cho 8.
+* **Hậu quả khi sai căn lề (Unaligned Access Fault):**
+  * Trên lõi Cortex-M4/M7, nếu con trỏ không căn lề 8-byte mà thực hiện nạp/ghi dữ liệu dấu phẩy động 64-bit (`double` hoặc thanh ghi FPU `LDRD`/`STRD`), CPU sẽ lập tức kích hoạt ngắt ngoại lệ phần cứng **`UsageFault`**!
+
+---
+
 ## <span style="color:#e67e22">2. Static vs Dynamic Allocation của FreeRTOS Primitives</span>
 
 ### <span style="color:#1abc9c">2.1 Dynamic Allocation — Cấp phát Động</span>
@@ -266,67 +298,182 @@ assert_param(ledCmdQueue != NULL);
 > * Việc cấp phát bộ nhớ được thực hiện ở **PORTABLE LAYER** (không phải trong kernel core).
 > * Có 5 file triển khai sẵn trong thư mục `FreeRTOS/Source/portable/MemMang/`.
 
-### <span style="color:#1abc9c">3.1 Chi tiết từng Heap</span>
+### <span style="color:#1abc9c">3.1 Chi tiết Thuật toán & Mã Nguồn 5 Bộ Heap</span>
 
-#### <span style="color:#3498db">`heap_1.c` — Bump Pointer (Chỉ Cấp phát, Không Giải phóng)</span>
+#### <span style="color:#3498db">1. `heap_1.c` — Bump Pointer (Cấp phát tuần tự, Không giải phóng)</span>
+* **Nguyên lý hoạt động:** Cực kỳ đơn giản. Định nghĩa một mảng tĩnh duy nhất:
+  ```c
+  static uint8_t ucHeap[ configTOTAL_HEAP_SIZE ];
+  static size_t xNextFreeByte = 0;
+  ```
+* Mỗi lần gọi `pvPortMalloc(xWantedSize)`:
+  1. Căn lề byte cho `xWantedSize`.
+  2. Kiểm tra `xNextFreeByte + xWantedSize <= configTOTAL_HEAP_SIZE`.
+  3. Trả về địa chỉ `&ucHeap[xNextFreeByte]` và tăng con trỏ `xNextFreeByte += xWantedSize`.
+* Hàm `vPortFree()` hoàn toàn rỗng:
+  ```c
+  void vPortFree( void *pv ) {
+      /* Không làm gì cả! Không hỗ trợ giải phóng bộ nhớ. */
+      ( void ) pv;
+  }
+  ```
+* **Minh họa quá trình cấp phát:**
+```
+[Giai đoạn A: Heap Trống]
+|--------------------------------------------------------| ucHeap
+^ xNextFreeByte = 0
 
-* 📗 **Bổ sung từ: Mastering the FreeRTOS Kernel - Richard Barry**: Thuật toán sử dụng một sequential bump pointer, đảm bảo căn lề byte (aligns to byte boundary).
-* Cấp phát từ mảng tĩnh `ucHeap[]` có kích thước `configTOTAL_HEAP_SIZE`.
-* `vPortFree()` **không làm gì** (stub) - không hỗ trợ giải phóng.
-* ⚡ 100% deterministic (thời gian cố định) và zero fragmentation (không phân mảnh).
-* **Figure 5 walkthrough**: Stage A (heap trống) → Stage B (tạo 1 task: chứa TCB + Stack) → Stage C (tạo 3 tasks tiếp tục tịnh tiến pointer).
-* ✅ Lý tưởng cho hệ thống **safety-critical** — tất cả đối tượng được tạo trước khi scheduler start, **không bao giờ xóa**.
+[Giai đoạn B: Tạo Task 1 (TCB + Stack = 500 bytes)]
+|== Task 1 ==|-------------------------------------------| ucHeap
+             ^ xNextFreeByte = 500
 
-#### <span style="color:#3498db">`heap_2.c` — Best-Fit (KHÔNG Coalescing)</span>
+[Giai đoạn C: Tạo Task 2 và 1 Queue (Tổng cộng thêm 800 bytes)]
+|== Task 1 ==|==== Task 2 ====|= Queue 1 =|---------------| ucHeap
+                                          ^ xNextFreeByte = 1300
+```
+* **Ưu điểm:** 100% tất định (Deterministic), tốc độ cấp phát tính bằng vài nano-giây, không bao giờ bị phân mảnh. Thích hợp nhất cho các thiết bị y tế và hệ thống an toàn cao cấp cấm hoàn toàn việc xóa tác vụ lúc runtime.
 
-* 📗 **Bổ sung từ: Mastering the FreeRTOS Kernel - Richard Barry**: **STATUS: Retained for backward compatibility, NOT recommended for new designs → USE heap_4**.
-* Thuật toán: Sử dụng danh sách liên kết (Linked list) các free blocks được sắp xếp theo **SIZE**.
-* Tìm khối trống nhỏ nhất vừa đủ (smallest block >= requested size). Sẽ chia nhỏ khối (splits blocks) nếu lớn hơn mức cần thiết.
-* `vPortFree()` đưa block trở lại free list **NHƯNG KHÔNG** gộp (coalesce) các khối liền kề.
-* ⚠️ **FRAGMENTATION**: Rất nghiêm trọng nếu alloc/free các kích thước khác nhau.
-* ✅ **VALID USE**: Chỉ an toàn khi alloc/free các đối tượng **luôn có kích thước giống hệt nhau** (fixed-size pool).
-* **Figure 6 walkthrough**: Tạo 3 tasks → xóa 1 task → tạo task mới (thuật toán best-fit sẽ tái sử dụng chính xác block vừa bị xóa).
+---
 
-#### <span style="color:#3498db">`heap_3.c` — Standard Library Wrapper</span>
+#### <span style="color:#3498db">2. `heap_2.c` — Best-Fit Allocation (Không ghép khối liền kề)</span>
+* **Nguyên lý:** Quản lý các khối nhớ trống bằng một danh sách liên kết đơn được sắp xếp theo **thứ tự kích thước tăng dần (Sorted by Size)**:
+  * Khi gọi `pvPortMalloc(xWantedSize)`: Quét danh sách, chọn khối trống **nhỏ nhất** nhưng vừa đủ lớn để chứa `xWantedSize` (Best-Fit). Nếu khối lớn hơn kích thước cần, nó sẽ bị cắt làm đôi (split).
+  * Khi gọi `vPortFree(pv)`: Chèn khối vừa giải phóng trở lại danh sách liên kết theo đúng thứ tự kích thước.
+* **Nhược điểm chí mạng (Tại sao bị thay thế bởi heap_4?):**
+  * `heap_2` **KHÔNG gộp các khối nhớ liền kề (No Coalescing)**.
+  * *Ví dụ:* Bạn giải phóng khối A (20 bytes) nằm ngay sát cạnh khối B (30 bytes). Trong RAM vật lý, bạn đang có 50 bytes trống liên tục. Nhưng trong danh sách của `heap_2`, chúng là 2 khối rời rạc. Nếu bạn yêu cầu cấp phát 40 bytes, `heap_2` sẽ báo **HẾT RAM (Allocation Failed)**!
+  * **Trường hợp duy nhất nên dùng:** Khi ứng dụng liên tục tạo và xóa các đối tượng **có cùng một kích thước cố định** (ví dụ tạo và xóa cùng một loại Task hoặc cùng một kiểu Queue).
 
-* Wrap trực tiếp `malloc()`/`free()` của toolchain compiler C.
-* 📗 **Bổ sung từ: Mastering the FreeRTOS Kernel - Richard Barry**: Đảm bảo thread safety bằng cách suspend scheduler.
-* **`configTOTAL_HEAP_SIZE` KHÔNG có tác dụng** ở đây. Kích thước heap do linker script quyết định.
-* Hàm `xPortGetFreeHeapSize()` **KHÔNG** được hỗ trợ.
-* ✅ Dùng khi cần tương thích thư viện C dùng `malloc`.
-* Code nội bộ mẫu:
+---
+
+#### <span style="color:#3498db">3. `heap_3.c` — Bọc An toàn cho Thư viện C</span>
+* `heap_3` không tự khai báo mảng nhớ nào. Nó sử dụng trực tiếp vùng nhớ Heap do Linker Script của trình biên dịch cấp phát.
+* Mã nguồn đầy đủ bên trong `heap_3.c`:
 ```c
-void *pvPortMalloc( size_t xWantedSize ) {
+void *pvPortMalloc( size_t xWantedSize )
+{
     void *pvReturn;
-    vTaskSuspendAll();         // Thread safety
-    pvReturn = malloc( xWantedSize );
-    ( void ) xTaskResumeAll();
+    vTaskSuspendAll(); // Tạm dừng Scheduler để đảm bảo an toàn luồng
+    {
+        pvReturn = malloc( xWantedSize ); // Gọi malloc của thư viện C chuẩn
+        traceMALLOC( pvReturn, xWantedSize );
+    }
+    ( void ) xTaskResumeAll(); // Khôi phục Scheduler
     return pvReturn;
+}
+
+void vPortFree( void *pv )
+{
+    if( pv )
+    {
+        vTaskSuspendAll();
+        {
+            free( pv ); // Gọi free của thư viện C chuẩn
+            traceFREE( pv, 0 );
+        }
+        ( void ) xTaskResumeAll();
+    }
 }
 ```
 
-#### <span style="color:#3498db">`heap_4.c` — First-Fit WITH Coalescing ⭐</span>
+---
 
-* 📗 **Bổ sung từ: Mastering the FreeRTOS Kernel - Richard Barry**: Thuật toán danh sách liên kết các khối trống sắp xếp theo **ĐỊA CHỈ (ADDRESS)** (không phải theo size). Khối trống đầu tiên đủ lớn (First-Fit) sẽ được chọn.
-* **Coalescing**: Các khối vừa được giải phóng sẽ tự động gộp (merge) với các free blocks liền kề → **chống fragmentation**.
-* **Figure 7 complete walkthrough** (6 stages A→F): Tạo 3 tasks → Xóa task → Cấp phát queue → User alloc → Xóa queue → Xóa user alloc → Khối nhớ fully coalesced (gộp hoàn toàn).
-* Cho phép người dùng tự định nghĩa vùng nhớ: Đặt `configAPPLICATION_ALLOCATED_HEAP = 1`.
-  * User tự khai báo mảng `ucHeap[]` với vị trí mong muốn:
-  * GCC: `uint8_t ucHeap[ size ] __attribute__((section(".my_heap")));`
-  * IAR: `uint8_t ucHeap[ size ] @ 0x20000000;`
-* ⭐ **Lựa chọn tiêu chuẩn** cho hầu hết dự án mới.
+#### <span style="color:#3498db">4. `heap_4.c` — First-Fit với Khả năng Gộp Khối Liền kề (Coalescing) ⭐</span>
+* **Thuật toán First-Fit:** Khác với `heap_2`, danh sách liên kết của `heap_4` được sắp xếp theo **THỨ TỰ ĐỊA CHỈ BỘ NHỚ TĂNG DẦN (Sorted by Memory Address)**.
+* Khi tìm khối nhớ: Nó lấy khối nhớ đầu tiên đủ lớn (First-Fit), giúp giảm đáng kể thời gian duyệt danh sách so với Best-Fit.
+* **Cơ chế Gộp khối thần thánh (Coalescing):**
+  * Mỗi khi `vPortFree()` được gọi, kernel kiểm tra ngay địa chỉ của khối bên trái và khối bên phải. Nếu khối liền kề cũng đang rảnh rỗi, kernel tự động xóa bỏ header trung gian và **hợp nhất chúng thành một khối nhớ khổng lồ duy nhất**!
+* **Minh họa 6 bước của Richard Barry (Figure 7 Walkthrough):**
+```
+A. Khởi tạo:   [------------------- VÙNG TRỐNG DUY NHẤT -------------------]
+B. Cấp phát:  [ Task 1 ][ Task 2 ][ Task 3 ][--------- Vùng trống ---------]
+C. Xóa Task 2: [ Task 1 ][ Trống 2 ][ Task 3 ][--------- Vùng trống ---------] (Chưa gộp vì bị Task 3 ngăn cách)
+D. Cấp Queue:  [ Task 1 ][ Queue ][Trống 2B][ Task 3 ][---- Vùng trống ----]
+E. Xóa Task 1: [ Trống 1 ][ Queue ][Trống 2B][ Task 3 ][---- Vùng trống ----]
+F. Xóa tất cả: [------------------- TỰ ĐỘNG GỘP LẠI TOÀN BỘ ---------------] (Heap trở về 1 khối duy nhất!)
+```
 
-#### <span style="color:#3498db">`heap_5.c` — Multi-Region (RAM phân tán)</span>
+* **Tùy biến vị trí RAM cho Heap 4 (`configAPPLICATION_ALLOCATED_HEAP = 1`):**
+  * Khi bật macro này, FreeRTOS không tự sinh mảng `ucHeap`. Bạn được phép tự đặt `ucHeap` vào vùng RAM chuyên biệt:
+  ```c
+  // Trên trình biên dịch GCC (STM32CubeIDE) — Đặt vào vùng RAM nhanh DTCM:
+  uint8_t ucHeap[ configTOTAL_HEAP_SIZE ] __attribute__((section(".dtcmram")));
+  ```
 
-* 📗 **Bổ sung từ: Mastering the FreeRTOS Kernel - Richard Barry**: Giống hệt thuật toán của `heap_4` nhưng cho phép heap trải rộng trên **NHIỀU vùng nhớ KHÔNG liên tục** (Multiple non-contiguous memory regions).
-* **BẮT BUỘC** gọi hàm `vPortDefineHeapRegions()` **TRƯỚC KHI** gọi bất kỳ `pvPortMalloc()` nào.
-* Cấu trúc cấu hình `HeapRegion_t`: `{ pucStartAddress, xSizeInBytes }`
-* **STRICT RULES** (Luật bắt buộc):
-  1. Mảng phải được sắp xếp theo **thứ tự địa chỉ bắt đầu tăng dần** (ascending start address).
-  2. Mảng phải được kết thúc bằng phần tử lính canh (sentinel): `{ NULL, 0 }`.
-* **Listing 6 FLAWED approach**: Định nghĩa toàn bộ RAM1 làm heap → Sai lầm vì ghi đè lên linker variables (các biến của C/C++ compiler).
-* **Listing 7 CORRECT approach**: Chỉ định nghĩa phần RAM1 bắt đầu sau các biến (ví dụ: gán `ucHeap[]` trong RAM1) + toàn bộ RAM2 + toàn bộ RAM3.
-  * **Advantages**: Tránh hardcode địa chỉ thủ công, tận dụng Linker để tránh tràn (overflow).
+---
+
+#### <span style="color:#3498db">5. `heap_5.c` — Quản trị Đa Vùng Nhớ Rời Rạc (Non-Contiguous Multi-Region)</span>
+* `heap_5` kế thừa toàn bộ thuật toán First-Fit và Coalescing của `heap_4`, nhưng mở rộng cho các hệ thống có **nhiều khối RAM vật lý nằm cách xa nhau** (ví dụ STM32F7 có Internal SRAM1, SRAM2, CCM-RAM, và External SDRAM).
+* **Cấu trúc khai báo vùng nhớ `HeapRegion_t`:**
+  ```c
+  typedef struct HeapRegion
+  {
+      uint8_t *pucStartAddress; // Địa chỉ bắt đầu của vùng nhớ
+      size_t   xSizeInBytes;    // Kích thước của vùng nhớ tính bằng byte
+  } HeapRegion_t;
+  ```
+
+* **QUY TẮC BẮT BUỘC KHI CẤU HÌNH `vPortDefineHeapRegions()`:**
+  1. Mảng các vùng nhớ **BẮT BUỘC PHẢI SẮP XẾP THEO THỨ TỰ ĐỊA CHỈ TĂNG DẦN**.
+  2. Phần tử cuối cùng của mảng phải là phần tử lính canh kết thúc: `{ NULL, 0 }`.
+
+#### So sánh hai cách cấu hình trong sách của Richard Barry:
+
+```c
+/* =========================================================================
+ * CÁCH 1 (LISTING 6 TRONG SÁCH) — CÁCH TIẾP CẬN SAI LẦM (FLAWED APPROACH)
+ * ========================================================================= */
+// Giả sử vi điều khiển có 3 dải RAM:
+#define RAM1_START_ADDRESS    ( ( uint8_t * ) 0x00010000 )
+#define RAM1_SIZE             ( 64 * 1024 )
+#define RAM2_START_ADDRESS    ( ( uint8_t * ) 0x00020000 )
+#define RAM2_SIZE             ( 32 * 1024 )
+
+const HeapRegion_t xHeapRegionsFlawed[] =
+{
+    { RAM1_START_ADDRESS, RAM1_SIZE }, // ❌ NGUY HIỂM CHẾT NGƯỜI!
+    { RAM2_START_ADDRESS, RAM2_SIZE },
+    { NULL, 0 }
+};
+```
+
+> [!CAUTION]
+> **Tại sao Cách 1 bị coi là SAI LẦM (Flawed)?**
+> Địa chỉ `0x00010000` của RAM1 chính là nơi trình liên kết (Linker) đặt các biến toàn cục `.data`, biến chưa khởi tạo `.bss`, và vùng ngăn xếp chính MSP!
+> Nếu bạn khai báo gán trọn vẹn `RAM1_START_ADDRESS` cho `heap_5`, các hàm `pvPortMalloc()` sẽ cấp phát đè lên các biến của chương trình, gây phá hỏng dữ liệu và làm sập chip ngay lập tức!
+
+```c
+/* =========================================================================
+ * CÁCH 2 (LISTING 7 TRONG SÁCH) — CÁCH TIẾP CẬN CHUẨN XÁC (CORRECT APPROACH)
+ * ========================================================================= */
+// 1. Dành một mảng ucHeap cố định nằm trong RAM1 do Linker tự bố trí an toàn:
+#define RAM1_HEAP_SIZE        ( 30 * 1024 )
+static uint8_t ucHeap[ RAM1_HEAP_SIZE ];
+
+// 2. Dành trọn vẹn toàn bộ RAM2 (và external SDRAM) cho Heap 5:
+#define RAM2_START_ADDRESS    ( ( uint8_t * ) 0x00020000 )
+#define RAM2_SIZE             ( 32 * 1024 )
+
+const HeapRegion_t xHeapRegionsCorrect[] =
+{
+    // Vùng 1: Dùng mảng được Linker bảo vệ trong RAM1
+    { ucHeap,                           RAM1_HEAP_SIZE },
+    // Vùng 2: Dùng toàn bộ RAM2 chuyên biệt
+    { ( uint8_t * ) RAM2_START_ADDRESS, RAM2_SIZE },
+    // Kết thúc mảng bằng sentinel:
+    { NULL, 0 }
+};
+
+int main(void)
+{
+    // BẮT BUỘC: Phải khởi tạo vùng nhớ TRƯỚC KHI tạo bất kỳ Task hay Queue nào!
+    vPortDefineHeapRegions( xHeapRegionsCorrect );
+
+    // Tiếp tục khởi tạo Task...
+    xTaskCreate( ... );
+    vTaskStartScheduler();
+}
+```
 
 ---
 
@@ -544,6 +691,77 @@ __privileged_data_end__
 
 > [!NOTE]
 > **FreeRTOS MPU Port**: Sử dụng `GCC/ARM_CM4_MPU` hoặc `GCC/ARM_CM7_MPU` thay vì port thường. Cấu hình phức tạp hơn nhưng đáng giá cho hệ thống safety-critical.
+
+---
+
+### <span style="color:#1abc9c">6.4 Mã nguồn Hoàn chỉnh Tạo Task Hạn chế với MPU (`xTaskCreateRestricted`)</span>
+📘 *Nguồn: Hands-On RTOS with Microcontrollers — Brian Amos (Chapter 15)*
+
+Dưới đây là mã nguồn C thực tế thiết lập một Task chạy ở chế độ **Unprivileged Mode**, chỉ được quyền đọc ghi trên một mảng buffer riêng và bị cấm chạm vào phần còn lại của RAM:
+
+```c
+#include "FreeRTOS.h"
+#include "task.h"
+
+// 1. Khai báo Stack riêng và căn lề 32-byte chuẩn MPU:
+#define BUFFER_SIZE     128
+static uint8_t ucSharedBuffer[ BUFFER_SIZE ] __attribute__((aligned(32)));
+
+#define TASK_STACK_SIZE 256
+static StackType_t xRestrictedTaskStack[ TASK_STACK_SIZE ] __attribute__((aligned(TASK_STACK_SIZE * 4)));
+
+// 2. Khai báo TCB tĩnh cho task restricted:
+static StaticTask_t xRestrictedTaskTCB;
+
+// 3. Hàm thực thi của Task (Chạy ở Unprivileged Mode):
+void vRestrictedTaskCode( void *pvParameters )
+{
+    for( ;; )
+    {
+        // Hợp lệ: Thao tác trên buffer riêng được cấp quyền:
+        ucSharedBuffer[0] = 0xAA;
+
+        // BẤY LỖI BẢO MẬT (Nếu task cố tình chạm vào biến của task khác):
+        // *( (uint32_t*) 0x20000000 ) = 0xDEADBEEF;
+        // --> MPU kích hoạt ngắt MemManage Fault ngay lập tức! CPU dừng lại an toàn!
+
+        vTaskDelay( pdMS_TO_TICKS(100) );
+    }
+}
+
+// 4. Thiết lập cấu trúc TaskParameters_t:
+static const TaskParameters_t xTaskDefinition =
+{
+    .pvTaskCode     = vRestrictedTaskCode,
+    .pcName         = "MPU_Task",
+    .usStackDepth   = TASK_STACK_SIZE,
+    .pvParameters   = NULL,
+    .uxPriority     = 1 | portPRIVILEGE_BIT, // Chạy ở chế độ Unprivileged (bỏ cờ này)
+    .puxStackBuffer = xRestrictedTaskStack,
+
+    // Cấu hình các phân vùng MPU được phép truy cập:
+    .xRegions =
+    {
+        // Region 0: Cho phép đọc/ghi mảng ucSharedBuffer
+        {
+            .pvBaseAddress   = ( void * ) ucSharedBuffer,
+            .ulLengthInBytes = BUFFER_SIZE,
+            .ulParameters    = portMPU_REGION_READ_WRITE | portMPU_REGION_EXECUTE_NEVER
+        },
+        // Region 1: Không sử dụng
+        { 0, 0, 0 },
+        // Region 2: Không sử dụng
+        { 0, 0, 0 }
+    }
+};
+
+void vStartMPUDemo( void )
+{
+    TaskHandle_t xHandle;
+    // Khởi tạo task bị giới hạn bởi MPU:
+    xTaskCreateRestricted( &xTaskDefinition, &xHandle );
+}
+```
 
 ---
 
