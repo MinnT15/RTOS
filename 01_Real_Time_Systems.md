@@ -3,41 +3,69 @@
 
 ---
 
-## <span style="color:#e67e22">📑 Mục lục</span>
+<a id="toc"></a>
+## <span style="color:#e67e22">📑 MỤC LỤC BÀI HỌC (CHUẨN TƯƠNG TÁC ĐA TẦNG)</span> ^toc
 
-> 💡 Dùng **Ctrl+F** và tìm `## 1.` hoặc `## 5.` để nhảy nhanh đến từng mục.
+> 💡 *Toàn bộ các đề mục dưới đây đều là Hyperlink tương tác trực tiếp. Click vào bất kỳ dòng nào để nhảy ngay đến nội dung bài học.*
 
-```
- 1.  "Real-Time" là gì?              — Định nghĩa, deterministic response
- 2.  Phạm vi yêu cầu thời gian      — 3 ví dụ ADC, hậu quả trễ deadline
- 3.  Cách đảm bảo hành vi RT         — Nguyên tắc đơn giản hóa, flowchart
- 4.  Năm loại hệ thống Real-Time     — Hardware → Bare-metal → RTOS Firmware → RTOS Software → Crafted OS
-     ├─ 4.1 Hardware                  — FPGA, ASIC, discrete logic
-     ├─ 4.2 Bare-metal Firmware       — Super loop, ISR, code mẫu
-     ├─ 4.3 RTOS-based Firmware ⭐    — FreeRTOS + STM32, Zephyr, scheduler
-     ├─ 4.4 RTOS-based Software       — VxWorks, QNX, MMU, process isolation
-     ├─ 4.5 Carefully Crafted OS      — Embedded Linux, PREEMPT_RT
-     ├─ Bảng tổng hợp 5 loại         — So sánh 7 tiêu chí
-     ├─ So sánh MMU vs MPU            — 14 tiêu chí, code MPU STM32, flowchart
-     └─ Phân loại nhanh 12 hệ thống  — FreeRTOS, Zephyr, Linux, Arduino...
- 5.  Định nghĩa RTOS                 — Time-bound blocking, API timeout, firmware stack
- 6.  Phân loại mức độ Real-Time      — Hard 🔴 / Firm 🟠 / Soft 🟢
- 7.  Phạm vi RTOSes — Free vs Paid   — Safety cert, middleware, support
- 8.  Tại sao sách chọn FreeRTOS?     — 15+ năm, MIT license, portable
- 9.  Khi nào nên dùng RTOS?          — Bảng quyết định "Goldilocks"
- 10.  Điểm khác biệt RTOS vs GPOS    — Code so sánh mutex timeout
- 11.  Kiến thức bổ sung (FreeRTOS)   — Tính năng, License, Cấu trúc, Coding Style
- 12.  Câu hỏi ôn tập                  — 6 câu hỏi + đáp án
-  📌  Tóm tắt chương                  — Mindmap tổng kết
-```
+- [[#^sec-1|1. "Real-Time" là gì?]]
+  - [[#^sec-1-1|🔑 Hai yếu tố quan trọng:]]
+- [[#^sec-2|2. Phạm vi yêu cầu thời gian (Timing Requirements)]]
+  - [[#^sec-2-1|Ví dụ 1: Hệ thống điều khiển nhiệt độ mỏ hàn (Soldering Iron)]]
+  - [[#^sec-2-2|Ví dụ 2: Oscilloscope / Network Analyzer]]
+  - [[#^sec-2-3|Ví dụ 3: Motion Controller (ở giữa phổ)]]
+  - [[#^sec-2-4|Hậu quả khi trễ deadline:]]
+- [[#^sec-3|3. Cách đảm bảo hành vi Real-Time]]
+  - [[#^sec-3-1|Nguyên tắc vàng:]]
+  - [[#^sec-3-2|Thứ tự ưu tiên giải pháp:]]
+- [[#^sec-4|4. Năm loại hệ thống Real-Time (Chi tiết)]]
+  - [[#^sec-4-1|4.1 Hardware (Phần cứng thuần) 🔧]]
+  - [[#^sec-4-2|4.2 Bare-metal Firmware ⚡]]
+  - [[#^sec-4-3|4.3 RTOS-based Firmware ⭐ (Trọng tâm sách)]]
+  - [[#^sec-4-4|4.4 RTOS-based Software 🖥️]]
+  - [[#^sec-4-5|4.5 Carefully Crafted OS Software 🐧]]
+  - [[#^sec-4-6|📊 Bảng tổng hợp 5 loại — So sánh toàn diện]]
+  - [[#^sec-4-7|🔐 Phụ lục: So sánh MMU vs MPU (Memory Management Unit vs Memory Protection Unit)]]
+  - [[#^sec-4-8|🎯 Phân loại nhanh — Những hệ thống thực tế thuộc loại nào?]]
+- [[#^sec-5|5. Định nghĩa RTOS (Defining RTOS)]]
+  - [[#^sec-5-1|RTOS là gì?]]
+  - [[#^sec-5-2|🔑 Điểm khác biệt CỐT LÕI: RTOS vs General-Purpose OS]]
+  - [[#^sec-5-3|Định nghĩa chính thức từ sách:]]
+  - [[#^sec-5-4|FreeRTOS trong ARM Firmware Stack:]]
+  - [[#^sec-5-5|Tại sao RTOS quan trọng cho Embedded?]]
+- [[#^sec-6|6. Phân loại mức độ Real-Time]]
+  - [[#^sec-6-1|6.1 Hard Real-Time 🔴]]
+  - [[#^sec-6-2|6.2 Firm Real-Time 🟠]]
+  - [[#^sec-6-3|6.3 Soft Real-Time 🟢]]
+- [[#^sec-7|7. Phạm vi RTOSes — Free vs Paid]]
+  - [[#^sec-7-1|RTOSes cho MCU nhỏ (8–32 bit):]]
+  - [[#^sec-7-2|RTOSes cho Application Processors (32–64 bit):]]
+  - [[#^sec-7-3|Tại sao phải trả tiền khi có free?]]
+- [[#^sec-8|8. Tại sao sách chọn FreeRTOS?]]
+  - [[#^sec-8-1|FreeRTOS trong ARM Firmware Stack:]]
+- [[#^sec-9|9. Khi nào nên dùng RTOS?]]
+  - [[#^sec-9-1|Bảng quyết định:]]
+  - [[#^sec-9-2|RTOS phát huy tốt nhất khi:]]
+  - [[#^sec-9-3|RTOS KHÔNG cần thiết khi:]]
+- [[#^sec-10|10. Điểm khác biệt cốt lõi: RTOS vs General-Purpose OS]]
+- [[#^sec-11|11. Kiến thức bổ sung (Mastering the FreeRTOS Kernel)]]
+  - [[#^sec-11-1|11.1 Các tính năng chính của FreeRTOS]]
+  - [[#^sec-11-2|11.2 Hệ sinh thái cấp phép FreeRTOS (Licensing Ecosystem)]]
+  - [[#^sec-11-3|11.3 Cấu trúc phân phối FreeRTOS]]
+  - [[#^sec-11-4|11.4 Quy ước đặt tên và Coding Style của FreeRTOS]]
+  - [[#^sec-11-5|11.5 Vai trò của FreeRTOSConfig.h]]
+- [[#^sec-12|12. Câu hỏi ôn tập (từ sách)]]
+- [[#^sec-summary|📌 Tóm tắt chương (Key Takeaways)]]
 
 ---
 
-## <span style="color:#e67e22">1. "Real-Time" là gì?</span>
+## <span style="color:#e67e22">1. "Real-Time" là gì?</span> ^sec-1
+<a id="sec-1"></a><a id="^sec-1"></a>
 
 > **Định nghĩa**: Bất kỳ hệ thống nào có **phản hồi xác định (deterministic response)** đối với một sự kiện đều được coi là "real-time". Nếu hệ thống **bị coi là thất bại** khi không đáp ứng yêu cầu về thời gian → đó là hệ thống real-time.
 
-### <span style="color:#1abc9c">🔑 Hai yếu tố quan trọng:</span>
+### <span style="color:#1abc9c">🔑 Hai yếu tố quan trọng:</span> ^sec-1-1
+<a id="sec-1-1"></a><a id="^sec-1-1"></a>
 1. **Tốc độ** của yêu cầu thời gian (nhanh hay chậm)
 2. **Mức độ nghiêm trọng** nếu trễ deadline (hậu quả nặng hay nhẹ)
 
@@ -46,11 +74,13 @@
 
 ---
 
-## <span style="color:#e67e22">2. Phạm vi yêu cầu thời gian (Timing Requirements)</span>
+## <span style="color:#e67e22">2. Phạm vi yêu cầu thời gian (Timing Requirements)</span> ^sec-2
+<a id="sec-2"></a><a id="^sec-2"></a>
 
 Sách minh họa bằng 3 ví dụ đọc ADC ở các tốc độ khác nhau:
 
-### <span style="color:#1abc9c">Ví dụ 1: Hệ thống điều khiển nhiệt độ mỏ hàn (Soldering Iron)</span>
+### <span style="color:#1abc9c">Ví dụ 1: Hệ thống điều khiển nhiệt độ mỏ hàn (Soldering Iron)</span> ^sec-2-1
+<a id="sec-2-1"></a><a id="^sec-2-1"></a>
 
 ```
 ┌───────────┐    ADC     ┌────────────┐    Heater    ┌──────────┐
@@ -67,16 +97,19 @@ Sách minh họa bằng 3 ví dụ đọc ADC ở các tốc độ khác nhau:
 
 → Không quá nhanh, nhưng **vẫn là real-time** vì phải đảm bảo deadline.
 
-### <span style="color:#1abc9c">Ví dụ 2: Oscilloscope / Network Analyzer</span>
+### <span style="color:#1abc9c">Ví dụ 2: Oscilloscope / Network Analyzer</span> ^sec-2-2
+<a id="sec-2-2"></a><a id="^sec-2-2"></a>
 - Đọc ADC ở tốc độ **hàng chục GHz**
 - Chuyển đổi sang miền tần số, hiển thị đồ họa hàng chục lần/giây
 - Yêu cầu thời gian **cực kỳ khắt khe**
 
-### <span style="color:#1abc9c">Ví dụ 3: Motion Controller (ở giữa phổ)</span>
+### <span style="color:#1abc9c">Ví dụ 3: Motion Controller (ở giữa phổ)</span> ^sec-2-3
+<a id="sec-2-3"></a><a id="^sec-2-3"></a>
 - PID control loop chạy từ **hàng trăm Hz** đến **hàng chục kHz**
 - Cần ổn định trong hệ thống chuyển động nhanh
 
-### <span style="color:#1abc9c">Hậu quả khi trễ deadline:</span>
+### <span style="color:#1abc9c">Hậu quả khi trễ deadline:</span> ^sec-2-4
+<a id="sec-2-4"></a><a id="^sec-2-4"></a>
 
 | Hệ thống | Hậu quả |
 |-----------|---------|
@@ -87,14 +120,17 @@ Sách minh họa bằng 3 ví dụ đọc ADC ở các tốc độ khác nhau:
 
 ---
 
-## <span style="color:#e67e22">3. Cách đảm bảo hành vi Real-Time</span>
+## <span style="color:#e67e22">3. Cách đảm bảo hành vi Real-Time</span> ^sec-3
+<a id="sec-3"></a><a id="^sec-3"></a>
 
-### <span style="color:#1abc9c">Nguyên tắc vàng:</span>
+### <span style="color:#1abc9c">Nguyên tắc vàng:</span> ^sec-3-1
+<a id="sec-3-1"></a><a id="^sec-3-1"></a>
 
 > [!TIP]
 > **Giữ hệ thống đơn giản nhất có thể** mà vẫn đáp ứng yêu cầu. Đừng thêm phức tạp không cần thiết!
 
-### <span style="color:#1abc9c">Thứ tự ưu tiên giải pháp:</span>
+### <span style="color:#1abc9c">Thứ tự ưu tiên giải pháp:</span> ^sec-3-2
+<a id="sec-3-2"></a><a id="^sec-3-2"></a>
 
 ```mermaid
 graph TD
@@ -115,7 +151,8 @@ graph TD
 
 ---
 
-## <span style="color:#e67e22">4. Năm loại hệ thống Real-Time (Chi tiết)</span>
+## <span style="color:#e67e22">4. Năm loại hệ thống Real-Time (Chi tiết)</span> ^sec-4
+<a id="sec-4"></a><a id="^sec-4"></a>
 
 Sách phân loại theo **phương thức triển khai** (implementation), từ hardware thuần → software phức tạp. Mỗi loại có đặc trưng riêng về determinism, độ phức tạp, và use case.
 
@@ -137,7 +174,8 @@ graph LR
 
 ---
 
-### <span style="color:#1abc9c">4.1 Hardware (Phần cứng thuần) 🔧</span>
+### <span style="color:#1abc9c">4.1 Hardware (Phần cứng thuần) 🔧</span> ^sec-4-1
+<a id="sec-4-1"></a><a id="^sec-4-1"></a>
 
 **Định nghĩa:** Hệ thống real-time được triển khai hoàn toàn bằng phần cứng, **không có code/firmware**.
 
@@ -175,7 +213,8 @@ MCU:      Input ──→ ISR ──→ Process ──→ Output    (tuần tự
 
 ---
 
-### <span style="color:#1abc9c">4.2 Bare-metal Firmware ⚡</span>
+### <span style="color:#1abc9c">4.2 Bare-metal Firmware ⚡</span> ^sec-4-2
+<a id="sec-4-2"></a><a id="^sec-4-2"></a>
 
 **Định nghĩa:** Firmware chạy trực tiếp trên MCU, **KHÔNG** có kernel/scheduler bên dưới. Code của bạn là "chủ nhân" duy nhất của CPU.
 
@@ -240,7 +279,8 @@ Bare-metal OK:          Bare-metal GẶP KHÓ:
 
 ---
 
-### <span style="color:#1abc9c">4.3 RTOS-based Firmware ⭐ (Trọng tâm sách)</span>
+### <span style="color:#1abc9c">4.3 RTOS-based Firmware ⭐ (Trọng tâm sách)</span> ^sec-4-3
+<a id="sec-4-3"></a><a id="^sec-4-3"></a>
 
 **Định nghĩa:** Firmware chạy **scheduling kernel** (hạt nhân lập lịch) trên MCU. Kernel quản lý nhiều task, mỗi task "tưởng" mình có CPU riêng.
 
@@ -352,7 +392,8 @@ Cả hai đều:
 
 ---
 
-### <span style="color:#1abc9c">4.4 RTOS-based Software 🖥️</span>
+### <span style="color:#1abc9c">4.4 RTOS-based Software 🖥️</span> ^sec-4-4
+<a id="sec-4-4"></a><a id="^sec-4-4"></a>
 
 **Định nghĩa:** Software chạy trên **full OS** với **MMU (Memory Management Unit)** và **CPU** (application processor). Đây là OS thực sự, không phải firmware.
 
@@ -401,7 +442,8 @@ RTOS Software (VxWorks trên PowerPC):
 
 ---
 
-### <span style="color:#1abc9c">4.5 Carefully Crafted OS Software 🐧</span>
+### <span style="color:#1abc9c">4.5 Carefully Crafted OS Software 🐧</span> ^sec-4-5
+<a id="sec-4-5"></a><a id="^sec-4-5"></a>
 
 **Định nghĩa:** Dùng OS **đa dụng** (general-purpose) nhưng được **tinh chỉnh cẩn thận** để đạt hiệu năng gần real-time. Không phải RTOS thực sự, chỉ là "best-effort".
 
@@ -457,7 +499,8 @@ Linux + PREEMPT_RT patch:
 
 ---
 
-### <span style="color:#1abc9c">📊 Bảng tổng hợp 5 loại — So sánh toàn diện</span>
+### <span style="color:#1abc9c">📊 Bảng tổng hợp 5 loại — So sánh toàn diện</span> ^sec-4-6
+<a id="sec-4-6"></a><a id="^sec-4-6"></a>
 
 | Tiêu chí | Hardware | Bare-metal | RTOS Firmware | RTOS Software | Crafted OS |
 |-----------|----------|------------|---------------|---------------|------------|
@@ -470,7 +513,8 @@ Linux + PREEMPT_RT patch:
 | **Ví dụ** | FPGA | STM32 GPIO toggle | FreeRTOS, Zephyr | VxWorks | Embedded Linux |
 ---
 
-### <span style="color:#1abc9c">🔐 Phụ lục: So sánh MMU vs MPU (Memory Management Unit vs Memory Protection Unit)</span>
+### <span style="color:#1abc9c">🔐 Phụ lục: So sánh MMU vs MPU (Memory Management Unit vs Memory Protection Unit)</span> ^sec-4-7
+<a id="sec-4-7"></a><a id="^sec-4-7"></a>
 
 Trong 5 loại hệ thống trên, **MMU** và **MPU** là hai khái niệm quan trọng giúp phân biệt "RTOS Firmware" và "RTOS Software". Cả hai đều liên quan đến **quản lý và bảo vệ bộ nhớ**, nhưng hoạt động ở mức độ rất khác nhau.
 
@@ -642,7 +686,8 @@ graph TD
 
 
 
-### <span style="color:#1abc9c">🎯 Phân loại nhanh — Những hệ thống thực tế thuộc loại nào?</span>
+### <span style="color:#1abc9c">🎯 Phân loại nhanh — Những hệ thống thực tế thuộc loại nào?</span> ^sec-4-8
+<a id="sec-4-8"></a><a id="^sec-4-8"></a>
 
 | Hệ thống / RTOS | Thuộc loại | Giải thích |
 |------------------|-----------|------------|
@@ -664,9 +709,11 @@ graph TD
 
 ---
 
-## <span style="color:#e67e22">5. Định nghĩa RTOS (Defining RTOS)</span>
+## <span style="color:#e67e22">5. Định nghĩa RTOS (Defining RTOS)</span> ^sec-5
+<a id="sec-5"></a><a id="^sec-5"></a>
 
-### <span style="color:#1abc9c">RTOS là gì?</span>
+### <span style="color:#1abc9c">RTOS là gì?</span> ^sec-5-1
+<a id="sec-5-1"></a><a id="^sec-5-1"></a>
 
 OS thông thường (Windows, Linux, macOS) được tạo ra để:
 - **Trừu tượng hóa hardware** → lập trình viên không cần quan tâm phần cứng cụ thể
@@ -699,7 +746,8 @@ OS thông thường (Windows, Linux, macOS) được tạo ra để:
 - ✅ **Dễ hiểu** — cùng primitive được dùng bởi mọi lập trình viên
 - ✅ **Portable** — code chạy trên bất kỳ hardware nào OS hỗ trợ
 
-### <span style="color:#1abc9c">🔑 Điểm khác biệt CỐT LÕI: RTOS vs General-Purpose OS</span>
+### <span style="color:#1abc9c">🔑 Điểm khác biệt CỐT LÕI: RTOS vs General-Purpose OS</span> ^sec-5-2
+<a id="sec-5-2"></a><a id="^sec-5-2"></a>
 
 > [!IMPORTANT]
 > **Một câu tóm gọn**: Trong RTOS, mọi blocking call đều có **timeout** (time-bound). Trong general-purpose OS, blocking call có thể chờ **vô thời hạn**.
@@ -761,13 +809,15 @@ Giá trị timeout đặc biệt:
 > [!NOTE]
 > Chính **timeout này** tạo nên tính **deterministic** — hệ thống luôn biết trước thời gian tối đa một task có thể bị block, từ đó tính toán được worst-case response time.
 
-### <span style="color:#1abc9c">Định nghĩa chính thức từ sách:</span>
+### <span style="color:#1abc9c">Định nghĩa chính thức từ sách:</span> ^sec-5-3
+<a id="sec-5-3"></a><a id="^sec-5-3"></a>
 
 > *"Any OS that provides a **deterministic way of executing** a given piece of code can be considered a real-time OS."*
 >
 > — Bất kỳ OS nào cung cấp cách thực thi code **có tính xác định** (deterministic) đều được coi là RTOS.
 
-### <span style="color:#1abc9c">FreeRTOS trong ARM Firmware Stack:</span>
+### <span style="color:#1abc9c">FreeRTOS trong ARM Firmware Stack:</span> ^sec-5-4
+<a id="sec-5-4"></a><a id="^sec-5-4"></a>
 
 ```
 ┌─────────────────────────────────────────────────────┐
@@ -795,7 +845,8 @@ Giá trị timeout đặc biệt:
 - FreeRTOS **không ngăn cản** truy cập trực tiếp vendor driver, CMSIS, hoặc hardware register
 - → Code portable **khi dùng FreeRTOS API**, nhưng vẫn có thể viết code hiệu suất cao **khi truy cập trực tiếp hardware** (đánh đổi portability)
 
-### <span style="color:#1abc9c">Tại sao RTOS quan trọng cho Embedded?</span>
+### <span style="color:#1abc9c">Tại sao RTOS quan trọng cho Embedded?</span> ^sec-5-5
+<a id="sec-5-5"></a><a id="^sec-5-5"></a>
 
 ```mermaid
 graph TB
@@ -824,7 +875,8 @@ graph TB
 
 ---
 
-## <span style="color:#e67e22">6. Phân loại mức độ Real-Time</span>
+## <span style="color:#e67e22">6. Phân loại mức độ Real-Time</span> ^sec-6
+<a id="sec-6"></a><a id="^sec-6"></a>
 
 ```mermaid
 graph LR
@@ -834,7 +886,8 @@ graph LR
     style C fill:#44aa44,color:#fff
 ```
 
-### <span style="color:#1abc9c">6.1 Hard Real-Time 🔴</span>
+### <span style="color:#1abc9c">6.1 Hard Real-Time 🔴</span> ^sec-6-1
+<a id="sec-6-1"></a><a id="^sec-6-1"></a>
 
 | Tiêu chí | Chi tiết |
 |-----------|----------|
@@ -845,7 +898,8 @@ graph LR
 > [!CAUTION]
 > Hard real-time **không nhất thiết** liên quan đến an toàn tính mạng (safety-critical). CNC hỏng sản phẩm cũng là hard real-time failure.
 
-### <span style="color:#1abc9c">6.2 Firm Real-Time 🟠</span>
+### <span style="color:#1abc9c">6.2 Firm Real-Time 🟠</span> ^sec-6-2
+<a id="sec-6-2"></a><a id="^sec-6-2"></a>
 
 | Tiêu chí | Chi tiết |
 |-----------|----------|
@@ -853,7 +907,8 @@ graph LR
 | **Trễ vài lần** | Chấp nhận được, nhưng trễ nhiều/thường xuyên → hỏng |
 | **Ví dụ** | Video/Audio mất đồng bộ tạm thời → OK; Mỏ hàn mất vài mẫu ADC → OK, nhưng mất nhiều → mất kiểm soát nhiệt |
 
-### <span style="color:#1abc9c">6.3 Soft Real-Time 🟢</span>
+### <span style="color:#1abc9c">6.3 Soft Real-Time 🟢</span> ^sec-6-3
+<a id="sec-6-3"></a><a id="^sec-6-3"></a>
 
 | Tiêu chí | Chi tiết |
 |-----------|----------|
@@ -866,18 +921,22 @@ graph LR
 
 ---
 
-## <span style="color:#e67e22">7. Phạm vi RTOSes — Free vs Paid</span>
+## <span style="color:#e67e22">7. Phạm vi RTOSes — Free vs Paid</span> ^sec-7
+<a id="sec-7"></a><a id="^sec-7"></a>
 
-### <span style="color:#1abc9c">RTOSes cho MCU nhỏ (8–32 bit):</span>
+### <span style="color:#1abc9c">RTOSes cho MCU nhỏ (8–32 bit):</span> ^sec-7-1
+<a id="sec-7-1"></a><a id="^sec-7-1"></a>
 - **FreeRTOS**, Keil RTX, Micrium µC, ThreadX
 - Cung cấp compact real-time kernel
 
-### <span style="color:#1abc9c">RTOSes cho Application Processors (32–64 bit):</span>
+### <span style="color:#1abc9c">RTOSes cho Application Processors (32–64 bit):</span> ^sec-7-2
+<a id="sec-7-2"></a><a id="^sec-7-2"></a>
 - Wind River **VxWorks**, Wind River Linux
 - Green Hills **Integrity OS**
 - Linux + **PREEMPT_RT**
 
-### <span style="color:#1abc9c">Tại sao phải trả tiền khi có free?</span>
+### <span style="color:#1abc9c">Tại sao phải trả tiền khi có free?</span> ^sec-7-3
+<a id="sec-7-3"></a><a id="^sec-7-3"></a>
 
 | Yếu tố | Free RTOS | Paid RTOS |
 |---------|-----------|-----------|
@@ -891,7 +950,8 @@ graph LR
 
 ---
 
-## <span style="color:#e67e22">8. Tại sao sách chọn FreeRTOS?</span>
+## <span style="color:#e67e22">8. Tại sao sách chọn FreeRTOS?</span> ^sec-8
+<a id="sec-8"></a><a id="^sec-8"></a>
 
 | Lý do | Chi tiết |
 |-------|----------|
@@ -901,7 +961,8 @@ graph LR
 | **Miễn phí** | Phân phối theo **MIT license** |
 | **Đại diện** | Hầu hết embedded engineer đều biết/đã dùng FreeRTOS |
 
-### <span style="color:#1abc9c">FreeRTOS trong ARM Firmware Stack:</span>
+### <span style="color:#1abc9c">FreeRTOS trong ARM Firmware Stack:</span> ^sec-8-1
+<a id="sec-8-1"></a><a id="^sec-8-1"></a>
 
 ```
 ┌─────────────────────────────────────────────┐
@@ -924,9 +985,11 @@ graph LR
 
 ---
 
-## <span style="color:#e67e22">9. Khi nào nên dùng RTOS?</span>
+## <span style="color:#e67e22">9. Khi nào nên dùng RTOS?</span> ^sec-9
+<a id="sec-9"></a><a id="^sec-9"></a>
 
-### <span style="color:#1abc9c">Bảng quyết định:</span>
+### <span style="color:#1abc9c">Bảng quyết định:</span> ^sec-9-1
+<a id="sec-9-1"></a><a id="^sec-9-1"></a>
 
 | Mức độ phức tạp | Giải pháp phù hợp | Ví dụ |
 |------------------|--------------------|-------|
@@ -936,20 +999,23 @@ graph LR
 | **Rất phức tạp** | Full OS (RTOS hoặc general-purpose) | Web server + user auth + file sharing + multiple protocols |
 | **Hybrid** | Multi-core (1 core RTOS + 1 core general OS) | Kết hợp real-time control + complex networking |
 
-### <span style="color:#1abc9c">RTOS phát huy tốt nhất khi:</span>
+### <span style="color:#1abc9c">RTOS phát huy tốt nhất khi:</span> ^sec-9-2
+<a id="sec-9-2"></a><a id="^sec-9-2"></a>
 - ✅ **Nhiều task** cần chạy **bất đồng bộ** với nhau
 - ✅ Cần đảm bảo task **ưu tiên thấp** (networking, filesystem) **không can thiệp** task ưu tiên cao (sensor, actuator)
 - ✅ Control system cần chạy ở **khoảng thời gian xác định**
 - ✅ Độ phức tạp ở mức **"Goldilocks"** — không quá đơn giản, không quá phức tạp
 
-### <span style="color:#1abc9c">RTOS KHÔNG cần thiết khi:</span>
+### <span style="color:#1abc9c">RTOS KHÔNG cần thiết khi:</span> ^sec-9-3
+<a id="sec-9-3"></a><a id="^sec-9-3"></a>
 - ❌ Vấn đề giải quyết được bằng **hardware đơn giản**
 - ❌ Chỉ có **1-2 task đơn giản** (bare-metal đủ tốt)
 - ❌ MCU bị **giới hạn nghiêm trọng** về ROM/RAM
 
 ---
 
-## <span style="color:#e67e22">10. Điểm khác biệt cốt lõi: RTOS vs General-Purpose OS</span>
+## <span style="color:#e67e22">10. Điểm khác biệt cốt lõi: RTOS vs General-Purpose OS</span> ^sec-10
+<a id="sec-10"></a><a id="^sec-10"></a>
 
 | Đặc điểm | General-Purpose OS | RTOS |
 |-----------|-------------------|------|
@@ -971,11 +1037,13 @@ mutex_lock(mutex, 100ms);   // Chờ tối đa 100ms
 
 ---
 
-## <span style="color:#e67e22">11. Kiến thức bổ sung (Mastering the FreeRTOS Kernel)</span>
+## <span style="color:#e67e22">11. Kiến thức bổ sung (Mastering the FreeRTOS Kernel)</span> ^sec-11
+<a id="sec-11"></a><a id="^sec-11"></a>
 
 > 📗 **Bổ sung từ:** Mastering the FreeRTOS Kernel - Richard Barry (Preface + Chapter 1)
 
-### <span style="color:#1abc9c">11.1 Các tính năng chính của FreeRTOS</span>
+### <span style="color:#1abc9c">11.1 Các tính năng chính của FreeRTOS</span> ^sec-11-1
+<a id="sec-11-1"></a><a id="^sec-11-1"></a>
 
 FreeRTOS cung cấp một tập hợp các tính năng phong phú, đáp ứng nhu cầu của hầu hết các ứng dụng nhúng:
 
@@ -993,7 +1061,8 @@ FreeRTOS cung cấp một tập hợp các tính năng phong phú, đáp ứng n
 - Tuỳ chọn cấp phép thương mại và hỗ trợ chuyên nghiệp (thông qua OpenRTOS).
 - Cung cấp công cụ mô phỏng/phát triển miễn phí và đầy đủ tính năng trên Windows (FreeRTOS simulator).
 
-### <span style="color:#1abc9c">11.2 Hệ sinh thái cấp phép FreeRTOS (Licensing Ecosystem)</span>
+### <span style="color:#1abc9c">11.2 Hệ sinh thái cấp phép FreeRTOS (Licensing Ecosystem)</span> ^sec-11-2
+<a id="sec-11-2"></a><a id="^sec-11-2"></a>
 
 | Phiên bản | Đặc điểm cấp phép |
 |-----------|-------------------|
@@ -1001,7 +1070,8 @@ FreeRTOS cung cấp một tập hợp các tính năng phong phú, đáp ứng n
 | **OpenRTOS** | - Cấp phép thương mại từ WITTENSTEIN.<br>- Chung mã nguồn với FreeRTOS.<br>- Loại bỏ yêu cầu ghi nhận nguồn gốc của GPL/MIT.<br>- Bao gồm hỗ trợ chuyên nghiệp và bảo hành.<br>- Dành cho các công ty cần bảo đảm pháp lý. |
 | **SafeRTOS** | - Dựa trên FreeRTOS nhưng được phát triển độc lập.<br>- Chứng nhận IEC 61508 SIL 3 (pre-certified).<br>- Dành cho các ứng dụng yêu cầu an toàn tính mạng nghiêm ngặt (safety-critical).<br>- Phát triển bằng phương pháp hình thức (formal methods).<br>- API bị khóa (không thay đổi cấu hình động).<br>- Được tích hợp sẵn trong ROM của một số MCU (ví dụ: TI Stellaris). |
 
-### <span style="color:#1abc9c">11.3 Cấu trúc phân phối FreeRTOS</span>
+### <span style="color:#1abc9c">11.3 Cấu trúc phân phối FreeRTOS</span> ^sec-11-3
+<a id="sec-11-3"></a><a id="^sec-11-3"></a>
 
 > [!TIP]
 > Cấu trúc thư mục của FreeRTOS được thiết kế rất tối giản để dễ dàng tích hợp vào project.
@@ -1036,7 +1106,8 @@ Project includes:
 └── FreeRTOSConfig.h (project-specific)
 ```
 
-### <span style="color:#1abc9c">11.4 Quy ước đặt tên và Coding Style của FreeRTOS</span>
+### <span style="color:#1abc9c">11.4 Quy ước đặt tên và Coding Style của FreeRTOS</span> ^sec-11-4
+<a id="sec-11-4"></a><a id="^sec-11-4"></a>
 
 > [!IMPORTANT]
 > Nắm vững quy ước đặt tên này là **chìa khóa** để đọc hiểu mã nguồn FreeRTOS.
@@ -1075,7 +1146,8 @@ Ví dụ:
 - `BaseType_t`: Kiểu dữ liệu hiệu quả nhất cho kiến trúc (ví dụ: 32-bit trên ARM là `int32_t`).
 - `portTickType`: Tên cũ của `TickType_t` (vẫn còn xuất hiện trong các codebase cũ).
 
-### <span style="color:#1abc9c">11.5 Vai trò của FreeRTOSConfig.h</span>
+### <span style="color:#1abc9c">11.5 Vai trò của FreeRTOSConfig.h</span> ^sec-11-5
+<a id="sec-11-5"></a><a id="^sec-11-5"></a>
 
 - **BẮT BUỘC:** Mỗi ứng dụng sử dụng FreeRTOS đều phải có file `FreeRTOSConfig.h` riêng.
 - Chứa các hằng số cấu hình cụ thể cho ứng dụng để điều chỉnh hành vi của kernel.
@@ -1091,7 +1163,8 @@ Ví dụ:
 
 ---
 
-## <span style="color:#e67e22">12. Câu hỏi ôn tập (từ sách)</span>
+## <span style="color:#e67e22">12. Câu hỏi ôn tập (từ sách)</span> ^sec-12
+<a id="sec-12"></a><a id="^sec-12"></a>
 
 1. Hệ thống real-time có **luôn cần phải cực nhanh** không?
    > → **Không.** Real-time = deterministic, không phải fast. Ví dụ mỏ hàn chỉ cần 5 Hz.
@@ -1113,7 +1186,8 @@ Ví dụ:
 
 ---
 
-## <span style="color:#e67e22">📌 Tóm tắt chương (Key Takeaways)</span>
+## <span style="color:#e67e22">📌 Tóm tắt chương (Key Takeaways)</span> ^sec-summary
+<a id="sec-summary"></a><a id="^sec-summary"></a>
 
 ```mermaid
 graph TD

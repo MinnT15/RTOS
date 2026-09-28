@@ -6,42 +6,62 @@
 
 ---
 
-## <span style="color:#e67e22">📑 Mục lục</span>
+<a id="toc"></a>
+## <span style="color:#e67e22">📑 MỤC LỤC BÀI HỌC (CHUẨN TƯƠNG TÁC ĐA TẦNG)</span> ^toc
 
-> [!TIP]
-> Dùng **Ctrl+F** và tìm `## 1.` hoặc `## B1.` để nhảy nhanh đến từng mục.
+> 💡 *Toàn bộ các đề mục dưới đây đều là Hyperlink tương tác trực tiếp. Click vào bất kỳ dòng nào để nhảy ngay đến nội dung bài học.*
 
-```
-PHẦN A — KỸ THUẬT CHIA SẺ NGOẠI VI GIỮA NHIỀU TASK (Tổng quát)
- 1. Hiểu Bài toán Ngoại vi Chia sẻ  — Ví dụ UART/I2C/SPI, khi nào KHÔNG nên chia sẻ
- 2. Sử dụng Mutex bảo vệ Đa Task    — API Stream Buffer, cơ chế phối hợp, code mẫu
-    ├─ 2.1 Vấn đề 1-Writer          — Lockless FIFO, tại sao lỗi, so sánh Queue
-    ├─ 2.2 Mẫu Code Tổng quát       — SharedPeripheral_Send với timeout tracking
-    ├─ 2.3 Khắc phục Vấn đề Mutex   — Priority Inversion, Deadlocks, Recursive, Gatekeeper
-    ├─ 2.4 Cơ chế Nhận Đa Task      — Phân phối (Dispatcher Task), Đăng ký (Pub-Sub)
-    └─ 2.5 Cơ chế Gửi Đa Task       — Tuần tự hóa Mutex, Hộ vệ (Gatekeeper Task)
- 3. Đảm bảo Giao dịch Nguyên tử     — SPI Bus 1 ADC + 1 DAC, cs control, race condition
- 4. Đánh đổi Thiết kế               — Latency vs CPU Efficiency, RAM Usage
- 5. Tổng kết & Bài học Kiến trúc    — Key Takeaways
- 6. Câu hỏi Ôn tập                  — 5 câu hỏi & đáp án chi tiết
- 7. Bảng Tổng hợp API               — Danh sách 11 API FreeRTOS/STM32
-
-PHẦN B — PHỤ LỤC: VÍ DỤ THỰC HÀNH USB CDC VIRTUAL COM PORT (Tham khảo)
- B1. Yêu cầu & USB CDC Stack        — USB Enumeration, kiến trúc 5 tầng phần mềm
- B2. Bài toán Mất Dữ liệu CDC       — Naive code, lỗi USBD_BUSY, 3 phương án giải quyết
- B3. Triển khai Driver USB VCP       — Thay đổi middleware, TxCallBack, usbTask, tối ưu 94% CPU
- B4. Mở rộng Multi-Task với Mutex   — vcom_mutexPtr, 2 task ghi song song
-```
+- [[#^sec-1|1. Hiểu Bài toán Ngoại vi Chia sẻ — Understanding Shared Peripherals]]
+  - [[#^sec-1-1|1.1 Bối cảnh & Mục tiêu Chương (Context & Objectives)]]
+  - [[#^sec-1-2|1.2 Khái niệm Cốt lõi (Core Concepts)]]
+  - [[#^sec-1-3|1.3 Khi nào KHÔNG nên Chia sẻ Ngoại vi? (When NOT to Share Peripherals)]]
+- [[#^sec-2|2. Sử dụng Mutex bảo vệ Truy cập Đa Task — Using Mutexes for Access Control]]
+  - [[#^sec-2-1|2.1 Vấn đề: Stream Buffer chỉ hỗ trợ 1 Writer]]
+  - [[#^sec-2-2|2.2 Mẫu Code Tổng quát: Hàm Ghi Ngoại vi bọc Mutex với Timeout Tracking]]
+  - [[#^sec-2-3|2.3 Khắc phục các Vấn đề Phát sinh khi dùng Mutex chia sẻ Ngoại vi]]
+  - [[#^sec-2-4|2.4 Cơ chế Nhận dữ liệu từ Ngoại vi về Đa Task (Shared Receiver Design Patterns)]]
+  - [[#^sec-2-5|2.5 Cơ chế Gửi dữ liệu ra Ngoại vi từ Đa Task (Shared Transmitter Design Patterns)]]
+- [[#^sec-3|3. Đảm bảo Giao dịch Nguyên tử trên Ngoại vi Chia sẻ — Guaranteeing Atomic Transactions]]
+  - [[#^sec-3-1|3.1 Khái niệm Giao dịch Nguyên tử (Atomic Transaction) là gì?]]
+  - [[#^sec-3-2|3.2 Bẫy thiết kế: "Hàm Thread-Safe nhưng Giao dịch Thread-Unsafe"]]
+  - [[#^sec-3-3|3.3 Giải pháp: Mutex bao trọn toàn bộ Giao dịch Đa bước (Multi-Stage Transaction Mutex)]]
+  - [[#^sec-3-4|3.4 Ví dụ tương tự trên Bus I2C]]
+  - [[#^sec-3-5|3.5 Điều kiện để phương pháp này đạt hiệu quả]]
+- [[#^sec-4|4. Đánh đổi Thiết kế Khi Chia sẻ Ngoại vi — Design Trade-offs]]
+  - [[#^sec-4-1|4.1 Các Yếu tố Cần Cân nhắc]]
+- [[#^sec-5|5. Tổng kết & Bài học Kiến trúc — Summary & Architecture Lessons]]
+  - [[#^sec-5-1|5.1 Các Điểm Chốt Quan trọng (Key Takeaways)]]
+  - [[#^sec-5-2|5.2 Chuyển tiếp sang Chương 12]]
+- [[#^sec-6|6. Câu hỏi Ôn tập — Review Questions]]
+- [[#^sec-7|7. Bảng Tổng hợp API & Kỹ thuật trong Chương 11]]
+- [[#^sec-8|B1. Yêu cầu Thiết kế & Giới thiệu USB CDC Driver Stack của STM32]]
+  - [[#^sec-8-1|B1.1 USB CDC là gì?]]
+  - [[#^sec-8-2|B1.2 Yêu cầu Thiết kế cho USB Virtual COM Port Driver]]
+  - [[#^sec-8-3|B1.3 Kiến trúc 5 Tầng Phần mềm USB CDC]]
+- [[#^sec-9|B2. Sử dụng CDC Driver Gốc — Bài toán Mất Dữ liệu (Data Loss Problem)]]
+  - [[#^sec-9-1|B2.1 Mã nguồn Task Gửi Dữ liệu Đơn giản (Naive Approach)]]
+  - [[#^sec-9-2|B2.2 Hiện tượng Quan sát trên Terminal]]
+  - [[#^sec-9-3|B2.3 Nguyên nhân Gốc rễ (Root Cause Analysis)]]
+  - [[#^sec-9-4|B2.4 Ba Phương án Giải quyết (Proposed Solutions)]]
+- [[#^sec-10|B3. Phát triển Driver USB VCP dựa trên Stream Buffer — VirtualCommDriver.c]]
+  - [[#^sec-10-1|B3.1 Sửa đổi STM CDC Middleware — Thêm Callback Truyền Xong (TxCallBack)]]
+  - [[#^sec-10-2|B3.2 Các Hàm Public của VirtualCommDriver.c]]
+  - [[#^sec-10-3|B3.3 Hàm Private: Task Nền USB (`usbTask`) & Callback ISR (`usbTxComplete`)]]
+  - [[#^sec-10-4|B3.4 Sơ đồ Trình tự Hoạt động Tổng thể (Sequence Diagram)]]
+  - [[#^sec-10-5|B3.5 Ứng dụng Mẫu (`mainUsbStreamBuffer.c`)]]
+  - [[#^sec-10-6|B3.6 Tối ưu CPU: Đánh đổi Latency vs. Hiệu suất]]
+- [[#^sec-11|B4. Mở rộng Multi-Task với Mutex — VirtualCommDriverMultiTask.c]]
+  - [[#^sec-11-1|B4.1 Khai báo Biến Toàn cục & Tạo Mutex]]
+  - [[#^sec-11-2|B4.2 Hàm `TransmitUsbData()` bọc Mutex — Phiên bản Multi-Task]]
+  - [[#^sec-11-3|B4.3 Ứng dụng Mẫu: 2 Task Ghi Đồng thời (`mainUsbStreamBufferMultiTask.c`)]]
 
 ---
 
-# <span style="color:#f1c40f">PHẦN A — KỸ THUẬT CHIA SẺ NGOẠI VI GIỮA NHIỀU TASK (Tổng quát)</span>
+## <span style="color:#e67e22">1. Hiểu Bài toán Ngoại vi Chia sẻ — Understanding Shared Peripherals</span> ^sec-1
+<a id="sec-1"></a><a id="^sec-1"></a>
 
----
-
-## <span style="color:#e67e22">1. Hiểu Bài toán Ngoại vi Chia sẻ — Understanding Shared Peripherals</span>
-
-### <span style="color:#1abc9c">1.1 Bối cảnh & Mục tiêu Chương (Context & Objectives)</span>
+### <span style="color:#1abc9c">1.1 Bối cảnh & Mục tiêu Chương (Context & Objectives)</span> ^sec-1-1
+<a id="sec-1-1"></a><a id="^sec-1-1"></a>
 
 Ở [Chương 10](file:///D:/COURSE/STM32/RTOS/Hands-On-RTOS-Book-Notes/Chapter_10_Drivers_and_ISRs.md), chúng ta đã phát triển các Driver ngoại vi (UART Queue, Buffer+Semaphore, DMA+Stream Buffer), nhưng **mỗi Driver chỉ được sử dụng bởi DUY NHẤT 1 Task**. Trong thực tế hệ thống RTOS đa nhiệm, **nhiều Task cùng cần truy cập một ngoại vi phần cứng duy nhất** (ví dụ: SPI, I2C, USB, UART).
 
@@ -50,7 +70,8 @@ PHẦN B — PHỤ LỤC: VÍ DỤ THỰC HÀNH USB CDC VIRTUAL COM PORT (Tham k
 
 Chương này tập trung vào việc **xây dựng mã nguồn Thread-safe phía trên (on top of) một Driver Stack sẵn có** của nhà sản xuất, thay vì viết Driver từ thanh ghi cấp thấp.
 
-### <span style="color:#1abc9c">1.2 Khái niệm Cốt lõi (Core Concepts)</span>
+### <span style="color:#1abc9c">1.2 Khái niệm Cốt lõi (Core Concepts)</span> ^sec-1-2
+<a id="sec-1-2"></a><a id="^sec-1-2"></a>
 
 #### <span style="color:#3498db">1. Ngoại vi Chia sẻ là gì?</span>
 Ngoại vi phần cứng (SPI, I2C, UART, USB, Ethernet...) là **tài nguyên dùng chung (Shared Resource)** giống như biến toàn cục hay vùng nhớ RAM chung. Khi nhiều Task muốn truy cập cùng một ngoại vi, cần phải có **cơ chế phân xử (Arbitration Mechanism)** để đảm bảo:
@@ -72,7 +93,8 @@ Ngoại vi phần cứng (SPI, I2C, UART, USB, Ethernet...) là **tài nguyên d
 
 Các lời gọi blocking của RTOS (`xSemaphoreTake`, `xQueueReceive`...) có thể đặt **giới hạn thời gian chờ (Timeout)**, giúp dễ dàng phát hiện khi việc truy cập ngoại vi chia sẻ gây ra vi phạm deadline.
 
-### <span style="color:#1abc9c">1.3 Khi nào KHÔNG nên Chia sẻ Ngoại vi? (When NOT to Share Peripherals)</span>
+### <span style="color:#1abc9c">1.3 Khi nào KHÔNG nên Chia sẻ Ngoại vi? (When NOT to Share Peripherals)</span> ^sec-1-3
+<a id="sec-1-3"></a><a id="^sec-1-3"></a>
 
 #### <span style="color:#3498db">Trường hợp 1: Yêu cầu Thời gian Thực Nghiêm ngặt (Hard Real-Time)</span>
 Khi timing cực kỳ quan trọng (ví dụ: điều khiển motor, sampling ADC tốc độ cao), **tốt nhất là dùng phần cứng ngoại vi riêng biệt (Dedicated Peripheral)** cho mỗi Task thay vì chia sẻ. Đây là lý do MCU có nhiều bộ SPI, USART, I2C — mặc dù 1 bus hoàn toàn có khả năng phục vụ nhiều thiết bị, nhưng **dùng bus riêng sẽ loại bỏ hoàn toàn Blocking Delay do Arbitration**.
@@ -82,9 +104,11 @@ Các ngoại vi như ADC sampling hàng ngàn hoặc hàng chục ngàn điểm 
 
 ---
 
-## <span style="color:#e67e22">2. Sử dụng Mutex bảo vệ Truy cập Đa Task — Using Mutexes for Access Control</span>
+## <span style="color:#e67e22">2. Sử dụng Mutex bảo vệ Truy cập Đa Task — Using Mutexes for Access Control</span> ^sec-2
+<a id="sec-2"></a><a id="^sec-2"></a>
 
-### <span style="color:#1abc9c">2.1 Vấn đề: Stream Buffer chỉ hỗ trợ 1 Writer</span>
+### <span style="color:#1abc9c">2.1 Vấn đề: Stream Buffer chỉ hỗ trợ 1 Writer</span> ^sec-2-1
+<a id="sec-2-1"></a><a id="^sec-2-1"></a>
 
 #### <span style="color:#3498db">1. FreeRTOS Stream Buffer là gì?</span>
 
@@ -226,7 +250,8 @@ Task B:          [Chờ đợi Mutex...] ─────────────
 > [!TIP]
 > **Tóm lại**: Nếu chỉ có 1 Task ghi → dùng **Stream Buffer** (nhanh nhất). Nếu nhiều Task ghi → dùng **Stream Buffer + Mutex** (nhanh + an toàn) hoặc **Queue** (an toàn sẵn nhưng chậm hơn).
 
-### <span style="color:#1abc9c">2.2 Mẫu Code Tổng quát: Hàm Ghi Ngoại vi bọc Mutex với Timeout Tracking</span>
+### <span style="color:#1abc9c">2.2 Mẫu Code Tổng quát: Hàm Ghi Ngoại vi bọc Mutex với Timeout Tracking</span> ^sec-2-2
+<a id="sec-2-2"></a><a id="^sec-2-2"></a>
 
 **Mục đích**: Cho phép nhiều Task gọi hàm ghi ngoại vi đồng thời một cách an toàn. Thời gian chờ tối đa (`DelayMs`) được theo dõi chính xác bằng `xTaskGetTickCount()` để tổng thời gian block không vượt quá giới hạn cho phép.
 
@@ -286,7 +311,8 @@ flowchart TD
 * **Tách thành 2 lần gửi**: Nếu lần 1 chỉ gửi được một phần (buffer đầy), chờ thêm `remainingTime` để consumer Task rút bớt dữ liệu rồi gửi tiếp phần còn lại.
 * **Quy ước đặt tên C**: Vì C không có namespace, tất cả biến toàn cục nên thêm tiền tố module (ví dụ `vcom_`, `spi_`, `uart_`) để tránh xung đột tên.
 
-### <span style="color:#1abc9c">2.3 Khắc phục các Vấn đề Phát sinh khi dùng Mutex chia sẻ Ngoại vi</span>
+### <span style="color:#1abc9c">2.3 Khắc phục các Vấn đề Phát sinh khi dùng Mutex chia sẻ Ngoại vi</span> ^sec-2-3
+<a id="sec-2-3"></a><a id="^sec-2-3"></a>
 
 Sử dụng Mutex là giải pháp phổ biến nhất để phân xử (Arbitration) truy cập ngoại vi, nhưng nó tự bản thân gây ra các vấn đề nghiêm trọng về mặt thời gian thực và an toàn hệ thống. Dưới đây là các vấn đề và cách khắc phục:
 
@@ -316,7 +342,8 @@ Nếu việc quản lý Mutex quá phức tạp hoặc có nguy cơ cao xảy ra
   * Loại bỏ hoàn toàn việc dùng Mutex, không lo Priority Inversion hay Deadlock.
   * Đơn giản hóa kiến trúc Driver.
 
-### <span style="color:#1abc9c">2.4 Cơ chế Nhận dữ liệu từ Ngoại vi về Đa Task (Shared Receiver Design Patterns)</span>
+### <span style="color:#1abc9c">2.4 Cơ chế Nhận dữ liệu từ Ngoại vi về Đa Task (Shared Receiver Design Patterns)</span> ^sec-2-4
+<a id="sec-2-4"></a><a id="^sec-2-4"></a>
 
 Trong khi việc **gửi** dữ liệu (Transmit) tập trung vào việc **xếp hàng (Serialization)** nhiều Task ghi vào 1 ngoại vi, việc **nhận** dữ liệu (Receive) từ ngoại vi chia sẻ về nhiều Task lại đối mặt với bài toán hoàn toàn khác: **Định tuyến (Routing) và Tránh Phân mảnh Dữ liệu (Data Fragmentation)**.
 
@@ -376,7 +403,8 @@ Mô hình này áp dụng khi dữ liệu nhận được từ ngoại vi là **
                             └─► [ GPS Queue 3 ] ──► [ Task Hiển thị LCD ]
 ```
 
-### <span style="color:#1abc9c">2.5 Cơ chế Gửi dữ liệu ra Ngoại vi từ Đa Task (Shared Transmitter Design Patterns)</span>
+### <span style="color:#1abc9c">2.5 Cơ chế Gửi dữ liệu ra Ngoại vi từ Đa Task (Shared Transmitter Design Patterns)</span> ^sec-2-5
+<a id="sec-2-5"></a><a id="^sec-2-5"></a>
 
 Đối với chiều **gửi** dữ liệu (Transmit) từ nhiều Task ra một ngoại vi dùng chung, mục tiêu cốt lõi là **ngăn chặn sự xen kẽ (Interleaving) dữ liệu** và **tránh xung đột phần cứng** khi nhiều Task ghi đồng thời. Có 2 mô hình thiết kế chuẩn được áp dụng:
 
@@ -428,9 +456,11 @@ Mô hình này là giải pháp thay thế an toàn (Lock-Free) giúp loại b�
 
 ---
 
-## <span style="color:#e67e22">3. Đảm bảo Giao dịch Nguyên tử trên Ngoại vi Chia sẻ — Guaranteeing Atomic Transactions</span>
+## <span style="color:#e67e22">3. Đảm bảo Giao dịch Nguyên tử trên Ngoại vi Chia sẻ — Guaranteeing Atomic Transactions</span> ^sec-3
+<a id="sec-3"></a><a id="^sec-3"></a>
 
-### <span style="color:#1abc9c">3.1 Khái niệm Giao dịch Nguyên tử (Atomic Transaction) là gì?</span>
+### <span style="color:#1abc9c">3.1 Khái niệm Giao dịch Nguyên tử (Atomic Transaction) là gì?</span> ^sec-3-1
+<a id="sec-3-1"></a><a id="^sec-3-1"></a>
 
 Trong hệ điều hành, **tính nguyên tử (Atomicity)** nghĩa là một chuỗi các thao tác liên tiếp phải được thực hiện trọn vẹn như một khối duy nhất: **hoặc là tất cả cùng thành công, hoặc là không có thao tác nào được thực hiện**, và tuyệt đối **không được phép bị ngắt quãng** hay bị xen kẽ bởi các Task khác.
 
@@ -438,7 +468,8 @@ Trong hệ điều hành, **tính nguyên tử (Atomicity)** nghĩa là một ch
 
 ---
 
-### <span style="color:#1abc9c">3.2 Bẫy thiết kế: "Hàm Thread-Safe nhưng Giao dịch Thread-Unsafe"</span>
+### <span style="color:#1abc9c">3.2 Bẫy thiết kế: "Hàm Thread-Safe nhưng Giao dịch Thread-Unsafe"</span> ^sec-3-2
+<a id="sec-3-2"></a><a id="^sec-3-2"></a>
 
 > [!CAUTION]
 > **Sai lầm phổ biến của lập trình viên**: Nghĩ rằng chỉ cần bọc Mutex bên trong hàm ghi/đọc cấp thấp (ví dụ: bọc trong `HAL_SPI_Transmit()`) là hệ thống đã thread-safe. 
@@ -508,7 +539,8 @@ Task ADC (Ưu tiên THẤP)      Task DAC (Ưu tiên CAO)
 
 ---
 
-### <span style="color:#1abc9c">3.3 Giải pháp: Mutex bao trọn toàn bộ Giao dịch Đa bước (Multi-Stage Transaction Mutex)</span>
+### <span style="color:#1abc9c">3.3 Giải pháp: Mutex bao trọn toàn bộ Giao dịch Đa bước (Multi-Stage Transaction Mutex)</span> ^sec-3-3
+<a id="sec-3-3"></a><a id="^sec-3-3"></a>
 
 Để đảm bảo giao dịch nguyên tử, Mutex bắt buộc phải được chiếm giữ **TRƯỚC khi kéo CS xuống LOW** và chỉ được giải phóng **SAU khi đã kéo CS lên HIGH**:
 
@@ -548,7 +580,8 @@ int32_t Read_Shared_SPI_ADC(uint8_t* rxData, uint16_t len, uint32_t timeout)
 
 ---
 
-### <span style="color:#1abc9c">3.4 Ví dụ tương tự trên Bus I2C</span>
+### <span style="color:#1abc9c">3.4 Ví dụ tương tự trên Bus I2C</span> ^sec-3-4
+<a id="sec-3-4"></a><a id="^sec-3-4"></a>
 
 Đối với bus I2C, một giao dịch đọc thanh ghi của cảm biến (ví dụ đọc nhiệt độ từ cảm biến I2C) cũng gồm nhiều bước:
 1. Send **START** condition + Gửi địa chỉ Write của cảm biến.
@@ -562,7 +595,8 @@ int32_t Read_Shared_SPI_ADC(uint8_t* rxData, uint16_t len, uint32_t timeout)
 
 ---
 
-### <span style="color:#1abc9c">3.5 Điều kiện để phương pháp này đạt hiệu quả</span>
+### <span style="color:#1abc9c">3.5 Điều kiện để phương pháp này đạt hiệu quả</span> ^sec-3-5
+<a id="sec-3-5"></a><a id="^sec-3-5"></a>
 
 Phương pháp dùng Mutex bao trọn giao dịch hoạt động tốt và không làm tê liệt hệ thống thời gian thực khi thỏa mãn **3 điều kiện**:
 
@@ -572,9 +606,11 @@ Phương pháp dùng Mutex bao trọn giao dịch hoạt động tốt và khôn
 
 ---
 
-## <span style="color:#e67e22">4. Đánh đổi Thiết kế Khi Chia sẻ Ngoại vi — Design Trade-offs</span>
+## <span style="color:#e67e22">4. Đánh đổi Thiết kế Khi Chia sẻ Ngoại vi — Design Trade-offs</span> ^sec-4
+<a id="sec-4"></a><a id="^sec-4"></a>
 
-### <span style="color:#1abc9c">4.1 Các Yếu tố Cần Cân nhắc</span>
+### <span style="color:#1abc9c">4.1 Các Yếu tố Cần Cân nhắc</span> ^sec-4-1
+<a id="sec-4-1"></a><a id="^sec-4-1"></a>
 
 #### <span style="color:#3498db">1. Latency (Trễ) vs. CPU Efficiency (Hiệu suất CPU)</span>
 * **Stream Buffer Trigger Level = 1 byte**: Dữ liệu được truyền ngay lập tức khi có ➔ Trễ thấp nhất, nhưng CPU context-switch liên tục.
@@ -594,22 +630,26 @@ Sử dụng Stream Buffer / Queue tạo ra **2 lớp buffer**: Buffer RTOS + Buf
 
 ---
 
-## <span style="color:#e67e22">5. Tổng kết & Bài học Kiến trúc — Summary & Architecture Lessons</span>
+## <span style="color:#e67e22">5. Tổng kết & Bài học Kiến trúc — Summary & Architecture Lessons</span> ^sec-5
+<a id="sec-5"></a><a id="^sec-5"></a>
 
-### <span style="color:#1abc9c">5.1 Các Điểm Chốt Quan trọng (Key Takeaways)</span>
+### <span style="color:#1abc9c">5.1 Các Điểm Chốt Quan trọng (Key Takeaways)</span> ^sec-5-1
+<a id="sec-5-1"></a><a id="^sec-5-1"></a>
 
 * **Stream Buffer + Task Notification + Mutex** tạo thành bộ ba công cụ mạnh mẽ để xây dựng Driver ngoại vi chia sẻ hiệu suất cao, event-driven, thread-safe.
 * **Đánh đổi cốt lõi**: Latency ↔ CPU Efficiency ↔ RAM Usage ↔ Độ phức tạp Code. Không có giải pháp hoàn hảo cho mọi trường hợp — kỹ sư phải đánh giá từng yếu tố dựa trên yêu cầu cụ thể.
 * **Mutex bao trọn giao dịch** là Pattern tiêu chuẩn công nghiệp để chia sẻ Bus SPI/I2C giữa nhiều IC qua nhiều Task.
 * **Tránh đưa Business Logic vào ISR** — chỉ nên gửi Notification/Semaphore/xStreamBufferSendFromISR rồi trả CPU cho RTOS xử lý trong Task.
 
-### <span style="color:#1abc9c">5.2 Chuyển tiếp sang Chương 12</span>
+### <span style="color:#1abc9c">5.2 Chuyển tiếp sang Chương 12</span> ^sec-5-2
+<a id="sec-5-2"></a><a id="^sec-5-2"></a>
 
 Chương tiếp theo sẽ tập trung vào **Kiến trúc Phần mềm Firmware Linh hoạt (Well-Abstracted Architecture)** — tránh bẫy "Copy-Paste-Modify" khi bắt đầu dự án mới, thay vào đó xây dựng hệ thống module hóa có thể tái sử dụng Driver đã kiểm chứng giữa các dự án.
 
 ---
 
-## <span style="color:#e67e22">6. Câu hỏi Ôn tập — Review Questions</span>
+## <span style="color:#e67e22">6. Câu hỏi Ôn tập — Review Questions</span> ^sec-6
+<a id="sec-6"></a><a id="^sec-6"></a>
 
 #### <span style="color:#3498db">Câu 1: Luôn luôn tốt nhất là giảm thiểu số lượng ngoại vi phần cứng được sử dụng?</span>
 - ✅ **FALSE** (Sai) — Khi timing cực kỳ quan trọng hoặc băng thông cao, nên dùng ngoại vi riêng biệt (Dedicated) thay vì chia sẻ. Chia sẻ ngoại vi gây ra trễ và bất định thời gian.
@@ -628,7 +668,8 @@ Chương tiếp theo sẽ tập trung vào **Kiến trúc Phần mềm Firmware 
 
 ---
 
-## <span style="color:#e67e22">7. Bảng Tổng hợp API & Kỹ thuật trong Chương 11</span>
+## <span style="color:#e67e22">7. Bảng Tổng hợp API & Kỹ thuật trong Chương 11</span> ^sec-7
+<a id="sec-7"></a><a id="^sec-7"></a>
 
 | Hàm / Kỹ thuật | Nguồn | Mục đích |
 | :--- | :--- | :--- |
@@ -655,9 +696,11 @@ Chương tiếp theo sẽ tập trung vào **Kiến trúc Phần mềm Firmware 
 
 ---
 
-## <span style="color:#e67e22">B1. Yêu cầu Thiết kế & Giới thiệu USB CDC Driver Stack của STM32</span>
+## <span style="color:#e67e22">B1. Yêu cầu Thiết kế & Giới thiệu USB CDC Driver Stack của STM32</span> ^sec-8
+<a id="sec-8"></a><a id="^sec-8"></a>
 
-### <span style="color:#1abc9c">B1.1 USB CDC là gì?</span>
+### <span style="color:#1abc9c">B1.1 USB CDC là gì?</span> ^sec-8-1
+<a id="sec-8-1"></a><a id="^sec-8-1"></a>
 
 **USB CDC (Communication Device Class)** là chuẩn giao thức USB cho phép MCU **giả lập thành Cổng COM Ảo (Virtual COM Port / VCP)**. Máy tính nhận diện board Nucleo như cổng Serial RS-232 (COM3, COM4...) mà **không cần mạch chuyển đổi USB-to-UART** (CP2102, CH340, FTDI).
 
@@ -668,7 +711,8 @@ Chương tiếp theo sẽ tập trung vào **Kiến trúc Phần mềm Firmware 
 4. PC tải driver CDC (tích hợp sẵn trên Windows/Linux/macOS) và tạo ra cổng COM ảo.
 5. Từ đây, Task trên MCU có thể gửi/nhận dữ liệu qua USB giống hệt giao tiếp UART.
 
-### <span style="color:#1abc9c">B1.2 Yêu cầu Thiết kế cho USB Virtual COM Port Driver</span>
+### <span style="color:#1abc9c">B1.2 Yêu cầu Thiết kế cho USB Virtual COM Port Driver</span> ^sec-8-2
+<a id="sec-8-2"></a><a id="^sec-8-2"></a>
 
 #### <span style="color:#3498db">Các tính năng mong muốn:</span>
 1. **Nhiều Task có thể ghi dữ liệu** vào USB Virtual COM Port cùng lúc.
@@ -683,7 +727,8 @@ Chương tiếp theo sẽ tập trung vào **Kiến trúc Phần mềm Firmware 
 - **Tiêu thụ RAM**: Hàng đợi RTOS cần RAM bổ sung ngoài các buffer USB nội bộ.
 - **Hiệu suất (Double Copy)**: Dữ liệu bị sao chép 2 lần — lần 1 vào Stream Buffer, lần 2 từ Stream Buffer vào USB TX Buffer.
 
-### <span style="color:#1abc9c">B1.3 Kiến trúc 5 Tầng Phần mềm USB CDC</span>
+### <span style="color:#1abc9c">B1.3 Kiến trúc 5 Tầng Phần mềm USB CDC</span> ^sec-8-3
+<a id="sec-8-3"></a><a id="^sec-8-3"></a>
 
 ```mermaid
 graph TD
@@ -785,9 +830,11 @@ usbTask tỉnh dậy, lặp lại chu trình
 
 ---
 
-## <span style="color:#e67e22">B2. Sử dụng CDC Driver Gốc — Bài toán Mất Dữ liệu (Data Loss Problem)</span>
+## <span style="color:#e67e22">B2. Sử dụng CDC Driver Gốc — Bài toán Mất Dữ liệu (Data Loss Problem)</span> ^sec-9
+<a id="sec-9"></a><a id="^sec-9"></a>
 
-### <span style="color:#1abc9c">B2.1 Mã nguồn Task Gửi Dữ liệu Đơn giản (Naive Approach)</span>
+### <span style="color:#1abc9c">B2.1 Mã nguồn Task Gửi Dữ liệu Đơn giản (Naive Approach)</span> ^sec-9-1
+<a id="sec-9-1"></a><a id="^sec-9-1"></a>
 
 **Mục đích**: Task gửi 2 chuỗi `"test"` và `"message"` liên tiếp qua USB CDC mỗi 100 ticks.
 
@@ -812,10 +859,12 @@ void usbPrintOutTask( void* NotUsed)
 }
 ```
 
-### <span style="color:#1abc9c">B2.2 Hiện tượng Quan sát trên Terminal</span>
+### <span style="color:#1abc9c">B2.2 Hiện tượng Quan sát trên Terminal</span> ^sec-9-2
+<a id="sec-9-2"></a><a id="^sec-9-2"></a>
 Kết quả mong đợi: Luân phiên `test` rồi `message`. Kết quả thực tế: **Nhiều dòng `test` liên tiếp mà không có `message` xen kẽ!** SystemView xác nhận mã nguồn chạy đúng thứ tự — vấn đề nằm ở tầng USB driver.
 
-### <span style="color:#1abc9c">B2.3 Nguyên nhân Gốc rễ (Root Cause Analysis)</span>
+### <span style="color:#1abc9c">B2.3 Nguyên nhân Gốc rễ (Root Cause Analysis)</span> ^sec-9-3
+<a id="sec-9-3"></a><a id="^sec-9-3"></a>
 
 Hàm `CDC_Transmit_FS()` do STM32 CubeMX tự sinh có đoạn kiểm tra sau:
 
@@ -833,7 +882,8 @@ return result;
 > [!CAUTION]
 > **Vấn đề**: Khi `"test\n"` đang được USB hardware truyền đi (TxState ≠ 0), lời gọi `CDC_Transmit_FS("message\n", 8)` ngay sau đó sẽ bị trả về `USBD_BUSY` ➔ **Dữ liệu `"message"` bị HỦY BỎ HOÀN TOÀN mà không có bất kỳ thông báo nào!**
 
-### <span style="color:#1abc9c">B2.4 Ba Phương án Giải quyết (Proposed Solutions)</span>
+### <span style="color:#1abc9c">B2.4 Ba Phương án Giải quyết (Proposed Solutions)</span> ^sec-9-4
+<a id="sec-9-4"></a><a id="^sec-9-4"></a>
 
 #### <span style="color:#3498db">Phương án 1: Polling Retry Loop (❌ Không khuyến nghị)</span>
 
@@ -871,9 +921,11 @@ Dùng Queue thay vì Stream Buffer. Queue hỗ trợ sẵn đa Task ghi mà khô
 
 ---
 
-## <span style="color:#e67e22">B3. Phát triển Driver USB VCP dựa trên Stream Buffer — VirtualCommDriver.c</span>
+## <span style="color:#e67e22">B3. Phát triển Driver USB VCP dựa trên Stream Buffer — VirtualCommDriver.c</span> ^sec-10
+<a id="sec-10"></a><a id="^sec-10"></a>
 
-### <span style="color:#1abc9c">B3.1 Sửa đổi STM CDC Middleware — Thêm Callback Truyền Xong (TxCallBack)</span>
+### <span style="color:#1abc9c">B3.1 Sửa đổi STM CDC Middleware — Thêm Callback Truyền Xong (TxCallBack)</span> ^sec-10-1
+<a id="sec-10-1"></a><a id="^sec-10-1"></a>
 
 Để tránh polling biến `TxState`, ta thêm **con trỏ hàm callback** vào struct CDC. Callback này sẽ được gọi tự động bởi USB ISR khi truyền hoàn tất.
 
@@ -915,7 +967,8 @@ typedef struct
 > [!WARNING]
 > **Lưu ý**: Sửa đổi file thư viện của STM sẽ gây khó khăn khi nâng cấp phiên bản HAL. Các phiên bản mới hơn của STM32CubeIDE / HAL đã tích hợp sẵn `TxCallBack`, nên sửa đổi này không cần thiết nếu dùng bản mới nhất.
 
-### <span style="color:#1abc9c">B3.2 Các Hàm Public của VirtualCommDriver.c</span>
+### <span style="color:#1abc9c">B3.2 Các Hàm Public của VirtualCommDriver.c</span> ^sec-10-2
+<a id="sec-10-2"></a><a id="^sec-10-2"></a>
 
 #### <span style="color:#3498db">1. `TransmitUsbDataLossy()` — Gửi Non-blocking, Chấp nhận Mất dữ liệu</span>
 
@@ -968,7 +1021,8 @@ void VirtualCommInit( void )
 }
 ```
 
-### <span style="color:#1abc9c">B3.3 Hàm Private: Task Nền USB (`usbTask`) & Callback ISR (`usbTxComplete`)</span>
+### <span style="color:#1abc9c">B3.3 Hàm Private: Task Nền USB (`usbTask`) & Callback ISR (`usbTxComplete`)</span> ^sec-10-3
+<a id="sec-10-3"></a><a id="^sec-10-3"></a>
 
 #### <span style="color:#3498db">1. Giai đoạn Khởi tạo của `usbTask` (Pre-Loop Initialization)</span>
 
@@ -1041,7 +1095,8 @@ while(1)
 }
 ```
 
-### <span style="color:#1abc9c">B3.4 Sơ đồ Trình tự Hoạt động Tổng thể (Sequence Diagram)</span>
+### <span style="color:#1abc9c">B3.4 Sơ đồ Trình tự Hoạt động Tổng thể (Sequence Diagram)</span> ^sec-10-4
+<a id="sec-10-4"></a><a id="^sec-10-4"></a>
 
 ```mermaid
 sequenceDiagram
@@ -1083,7 +1138,8 @@ sequenceDiagram
 
 Chu kỳ lặp lại mỗi 2 ms ≈ **~1,000 dòng/giây**. Tổng CPU ≈ **10%** (phần lớn dành cho `usbTask` và `usbPrint`).
 
-### <span style="color:#1abc9c">B3.5 Ứng dụng Mẫu (`mainUsbStreamBuffer.c`)</span>
+### <span style="color:#1abc9c">B3.5 Ứng dụng Mẫu (`mainUsbStreamBuffer.c`)</span> ^sec-10-5
+<a id="sec-10-5"></a><a id="^sec-10-5"></a>
 
 ```c
 int main(void)
@@ -1110,7 +1166,8 @@ void usbPrintOutTask( void* NotUsed)
 
 **Kết quả Terminal**: `test` và `message` luân phiên **ĐÚNG THỨ TỰ** — nhờ Stream Buffer đệm dữ liệu trước khi đẩy vào USB.
 
-### <span style="color:#1abc9c">B3.6 Tối ưu CPU: Đánh đổi Latency vs. Hiệu suất</span>
+### <span style="color:#1abc9c">B3.6 Tối ưu CPU: Đánh đổi Latency vs. Hiệu suất</span> ^sec-10-6
+<a id="sec-10-6"></a><a id="^sec-10-6"></a>
 
 #### <span style="color:#3498db">Cấu hình 1: Trễ Thấp (Low Latency) — Mặc định</span>
 - Stream Buffer Trigger Level = **1 byte**
@@ -1133,9 +1190,11 @@ uint8_t numBytes = xStreamBufferReceive( txStream, usbTxBuff, txBuffLen, 100);
 
 ---
 
-## <span style="color:#e67e22">B4. Mở rộng Multi-Task với Mutex — VirtualCommDriverMultiTask.c</span>
+## <span style="color:#e67e22">B4. Mở rộng Multi-Task với Mutex — VirtualCommDriverMultiTask.c</span> ^sec-11
+<a id="sec-11"></a><a id="^sec-11"></a>
 
-### <span style="color:#1abc9c">B4.1 Khai báo Biến Toàn cục & Tạo Mutex</span>
+### <span style="color:#1abc9c">B4.1 Khai báo Biến Toàn cục & Tạo Mutex</span> ^sec-11-1
+<a id="sec-11-1"></a><a id="^sec-11-1"></a>
 
 ```c
 #define txBuffLen 2048
@@ -1154,7 +1213,8 @@ vcom_mutexPtr = xSemaphoreCreateMutex();
 assert_param(vcom_mutexPtr != NULL);
 ```
 
-### <span style="color:#1abc9c">B4.2 Hàm `TransmitUsbData()` bọc Mutex — Phiên bản Multi-Task</span>
+### <span style="color:#1abc9c">B4.2 Hàm `TransmitUsbData()` bọc Mutex — Phiên bản Multi-Task</span> ^sec-11-2
+<a id="sec-11-2"></a><a id="^sec-11-2"></a>
 
 **Mục đích**: Cho phép nhiều Task gọi hàm này đồng thời một cách an toàn. Thời gian chờ tối đa (`DelayMs`) được theo dõi chính xác bằng `xTaskGetTickCount()`.
 
@@ -1192,7 +1252,8 @@ int32_t TransmitUsbData(uint8_t const* Buff, uint16_t Len, int32_t DelayMs)
 }
 ```
 
-### <span style="color:#1abc9c">B4.3 Ứng dụng Mẫu: 2 Task Ghi Đồng thời (`mainUsbStreamBufferMultiTask.c`)</span>
+### <span style="color:#1abc9c">B4.3 Ứng dụng Mẫu: 2 Task Ghi Đồng thời (`mainUsbStreamBufferMultiTask.c`)</span> ^sec-11-3
+<a id="sec-11-3"></a><a id="^sec-11-3"></a>
 
 #### <span style="color:#3498db">1. Hàm Task — Mỗi instance in số hiệu Task của mình</span>
 

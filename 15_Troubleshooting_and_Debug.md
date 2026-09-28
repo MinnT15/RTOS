@@ -9,7 +9,9 @@
     ├─ 1.1 Dùng công cụ phân tích    — SystemView, Tracealyzer, Debugger Plugins
     ├─ 1.2 Giám sát bộ nhớ           — Stack sizing, heap hooks
     ├─ 1.3 Stack overflow checking    — Method 1 vs 2, High Water Mark
-    └─ 1.4 Fix SystemView dropped    — 3 cách khắc phục khối đỏ
+    ├─ 1.4 Fix SystemView dropped    — 3 cách khắc phục khối đỏ
+    ├─ 1.5 Debug phần cứng Cortex-M  — DWT cycle counter, ITM/SWO 📘
+    └─ 1.6 Cấu hình SystemView & RTT — Tích hợp 4 bước vào STM32 📘
  2. configASSERT                     — Patterns, 3 trigger phổ biến, KHÔNG BAO GIỜ tắt
  3. Case Study: Debug Hung System    — Từng bước 4 giai đoạn, Data Breakpoint
     ├─ 3.1 Thu thập dữ liệu         — Ozone Attach, Call Stack
@@ -124,6 +126,110 @@ void vApplicationStackOverflowHook(TaskHandle_t xTask, char *pcTaskName) {
 | | `#define SEGGER_SYSVIEW_RTT_BUFFER_SIZE  4096` | |
 | **②** | **Tăng tốc độ clock debugger** trong Target Interface settings | Cần hardware debugger tốt hơn |
 | **③** | **Đóng live trace/watch windows** trong IDE/Ozone đang mở | Giảm traffic SWD bus |
+
+---
+
+### <span style="color:#1abc9c">1.5 Kiến trúc Debug Phần Cứng ARM Cortex-M: DWT, ITM/SWO & ETM</span>
+📘 *Nguồn: Hands-On RTOS with Microcontrollers — Brian Amos (Chapters 5 & 6)*
+
+Trong các hệ thống Real-Time khắt khe, việc đặt Breakpoint thông thường sẽ **dừng CPU**, làm ngắt quãng các bộ đếm thời gian phần cứng (PWM, Motor commutation, Watchdog Timer), dẫn đến cháy linh kiện hoặc mất kết nối mạng. Do đó, kỹ sư Senior phải làm chủ các khối phần cứng **CoreSight** có sẵn bên trong lõi ARM Cortex-M3/M4/M7:
+
+```mermaid
+graph TD
+    CPU["ARM Cortex-M Core<br/>(Cortex-M4/M7)"] --- CORE_SIGHT["ARM CoreSight Debug Subsystem"]
+    
+    CORE_SIGHT --> DWT["DWT (Data Watchpoint & Trace)<br/>----------------------------------<br/>• Bộ đếm chu kỳ clock CYCCNT<br/>• Watchpoint giám sát biến RAM<br/>• Không dừng CPU khi kích hoạt"]
+    CORE_SIGHT --> ITM["ITM (Instrumentation Trace)<br/>----------------------------------<br/>• 32 kênh truyền dữ liệu ảo<br/>• Xuất log qua chân SWO<br/>• Thay thế hoàn toàn printf"]
+    CORE_SIGHT --> ETM["ETM (Embedded Trace Macrocell)<br/>----------------------------------<br/>• Ghi lại từng lệnh Assembly đã chạy<br/>• Cần đầu cắm Trace chuyên dụng (20-pin)"]
+```
+
+#### <span style="color:#3498db">1. Bộ đếm chu kỳ xung nhịp DWT (DWT->CYCCNT)</span>
+* Để đo thời gian thực thi của một hàm với độ chính xác đến từng **chu kỳ xung nhịp (Clock Cycle)** mà không phụ thuộc vào FreeRTOS Tick:
+
+```c
+// Kích hoạt DWT Cycle Counter trên ARM Cortex-M:
+CoreDebug->DEMCR |= CoreDebug_DEMCR_TRCENA_Msk; // Bật Trace System
+DWT->CTRL |= DWT_CTRL_CYCCNTENA_Msk;           // Bật bộ đếm CYCCNT
+
+// Đo thời gian thực thi:
+uint32_t ulStartCycles = DWT->CYCCNT;
+vExecuteCriticalAlgorithm();
+uint32_t ulElapsedCycles = DWT->CYCCNT - ulStartCycles;
+
+// Tính ra thời gian thực tế:
+// Time (micro-seconds) = ulElapsedCycles / (SystemCoreClock / 1000000)
+```
+
+#### <span style="color:#3498db">2. Kênh truyền ITM / SWO — Giải pháp thay thế `printf` không xâm lấn</span>
+* Thay vì gọi `printf` qua UART làm tắc nghẽn bus từ 1ms - 10ms, chân **SWO (Serial Wire Output)** truyền byte trực tiếp ra J-Link debugger chỉ mất vài chu kỳ xung nhịp:
+
+```c
+// Hàm ghi ký tự qua cổng ITM Channel 0:
+int ITM_SendChar (uint32_t ch) {
+    if ((CoreDebug->DEMCR & CoreDebug_DEMCR_TRCENA_Msk) &&
+        (ITM->TCR & ITM_TCR_ITMENA_Msk) &&
+        (ITM->TER & (1UL << 0))) {
+        while (ITM->PORT[0].u32 == 0);
+        ITM->PORT[0].u8 = (uint8_t)ch;
+    }
+    return ch;
+}
+```
+
+---
+
+### <span style="color:#1abc9c">1.6 Cấu hình Chi tiết SEGGER SystemView & RTT từ Số 0</span>
+📘 *Nguồn: Hands-On RTOS with Microcontrollers — Brian Amos (Chapter 6)*
+
+SEGGER SystemView là tiêu chuẩn công nghiệp để ghi vết sự kiện RTOS. Cơ chế hoạt động dựa trên thư viện **SEGGER RTT (Real-Time Transfer)**: MCU ghi log vào một Circular Buffer trong RAM, và debugger (J-Link) đọc vùng RAM này trong khi CPU vẫn đang chạy bình thường mà không gây trễ hệ thống.
+
+#### Quy trình 4 bước tích hợp vào dự án STM32:
+
+```
+[Bước 1: Thêm File Nguồn] ──► [Bước 2: Sửa FreeRTOSConfig.h] ──► [Bước 3: Gọi Init trong Main] ──► [Bước 4: Mở Tool]
+```
+
+1. **Bước 1: Thêm các file mã nguồn vào project:**
+   * Thư mục `SEGGER/`: `SEGGER_RTT.c`, `SEGGER_RTT_printf.c`.
+   * Thư mục `Config/`: `SEGGER_SYSVIEW_Config_FreeRTOS.c`, `SEGGER_SYSVIEW_Conf.h`.
+   * Thư mục `OS/`: `SEGGER_SYSVIEW_FreeRTOS.c`, `SEGGER_SYSVIEW_FreeRTOS.h`.
+
+2. **Bước 2: Cấu hình macro trong `FreeRTOSConfig.h`:**
+   * Đặt dòng `#include "SEGGER_SYSVIEW_FreeRTOS.h"` ở **cuối cùng** của file `FreeRTOSConfig.h` để nạp các trace hooks:
+
+```c
+/* Bật tính năng Trace Facility trong FreeRTOSConfig.h */
+#define configUSE_TRACE_FACILITY                    1
+#define configUSE_STATS_FORMATTING_FUNCTIONS        1
+
+/* Nhúng SystemView trace macros ở cuối file FreeRTOSConfig.h: */
+#include "SEGGER_SYSVIEW_FreeRTOS.h"
+```
+
+3. **Bước 3: Khởi động SystemView trong hàm `main()` trước khi start Scheduler:**
+
+```c
+int main(void)
+{
+    /* Khởi tạo phần cứng HAL, Clock... */
+    HAL_Init();
+    SystemClock_Config();
+
+    /* KHỞI TẠO VÀ BẬT TRACE SYSTEMVIEW */
+    SEGGER_SYSVIEW_Conf();
+    SEGGER_SYSVIEW_Start();
+
+    /* Tạo các Task và Khởi động Scheduler */
+    xTaskCreate(vTaskBlink, "Blink", 128, NULL, 1, NULL);
+    vTaskStartScheduler();
+
+    for( ;; );
+}
+```
+
+4. **Bước 4: Cấu hình dung lượng Buffer chống rớt gói (Drop Data):**
+   * Trong file `SEGGER_SYSVIEW_Conf.h`, chỉnh sửa:
+     `#define SEGGER_SYSVIEW_RTT_BUFFER_SIZE  4096` (nếu chip có nhiều RAM như STM32F7 có thể tăng lên 8192 bytes).
 
 ---
 

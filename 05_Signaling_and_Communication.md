@@ -432,6 +432,195 @@ switch (received.source) {
 
 ---
 
+
+### <span style="color:#1abc9c">1.5 Queue Sets — Nhóm Hàng Đợi và Semaphore (xQueueCreateSet)</span>
+📗 *Nguồn: Mastering the FreeRTOS Real Time Kernel — Richard Barry (Chapter 4)*
+
+#### Khái niệm & Bài toán giải quyết
+* **Vấn đề thực tế:** Thông thường, một Task bị block khi chờ dữ liệu trên **1 Queue duy nhất** hoặc **1 Semaphore duy nhất**. Nhưng trong các hệ thống phức tạp, một Task quản lý trung tâm cần phải thức dậy khi có dữ liệu từ **nhiều nguồn khác nhau**:
+  * Nhận dữ liệu từ cổng UART (Queue UART).
+  * Nhận dữ liệu từ mạng Ethernet (Queue TCP/IP).
+  * Nhận tín hiệu ngắt nút nhấn khẩn cấp (Binary Semaphore Button).
+* Nếu dùng polling tuần tự từng Queue với timeout = 0, CPU sẽ bị chiếm dụng 100% vô ích (lãng phí điện năng và phá vỡ tính tất định).
+* **Giải pháp: Queue Sets.** Tương tự cơ chế `select()` hoặc `epoll()` trong lập trình socket Linux, FreeRTOS cho phép nhóm nhiều Queue và Semaphore lại thành một **Set**. Task chỉ cần block trên Set đó. Bất kỳ phần tử nào trong Set có sẵn dữ liệu, Task sẽ lập tức unblock!
+
+#### Bảng API Quản lý Queue Set
+
+| API Function | Tham số & Ý nghĩa | Mô tả hoạt động |
+| :--- | :--- | :--- |
+| `xQueueCreateSet(uxEventQueueLength)` | `uxEventQueueLength`: Tổng số sự kiện tối đa mà Set có thể giữ cùng lúc. | Cấp phát bộ nhớ cho Queue Set. |
+| `xQueueAddToSet(xQueueOrSemaphore, xQueueSet)` | `xQueueOrSemaphore`: Handle của Queue hoặc Semaphore cần add.<br>`xQueueSet`: Handle của Set. | Thêm một Queue/Semaphore vào Set. **Bắt buộc Queue/Semaphore phải RỖNG khi add!** |
+| `xQueueRemoveFromSet(xQueueOrSemaphore, xQueueSet)` | Tương tự add | Loại bỏ một thành viên khỏi Set. |
+| `xQueueSelectFromSet(xQueueSet, xTicksToWait)` | `xTicksToWait`: Thời gian chờ tối đa. | Block task cho đến khi có 1 thành viên trong Set sẵn sàng. **Trả về Handle của Queue/Semaphore có dữ liệu**. |
+
+> [!WARNING]
+> **Quy tắc vàng tính toán kích thước Queue Set (Sizing Rule):**
+> Tham số `uxEventQueueLength` khi tạo Set **BẮT BUỘC PHẢI BẰNG HOẶC LỚN HƠN TỔNG ĐỘ DÀI** của tất cả các Queue và Semaphore thành viên!
+> $$\text{uxEventQueueLength} \ge \sum \text{Queue\_Length} + \sum \text{Semaphore\_MaxCount}$$
+> *Ví dụ:* Nếu Set gồm 1 Queue UART (độ dài 10 phần tử) + 1 Queue CAN (độ dài 5 phần tử) + 1 Binary Semaphore (độ dài 1), thì:
+> $$\text{uxEventQueueLength} = 10 + 5 + 1 = 16$$
+> Nếu đặt nhỏ hơn, hàng đợi của Set sẽ bị tràn (Queue Set Full) và sự kiện đánh thức sẽ bị mất!
+
+#### Code mẫu hoàn chỉnh sử dụng Queue Set:
+
+```c
+#include "FreeRTOS.h"
+#include "queue.h"
+#include "semphr.h"
+
+#define UART_QUEUE_LEN      10
+#define CAN_QUEUE_LEN       5
+#define COMBINED_SET_LEN    (UART_QUEUE_LEN + CAN_QUEUE_LEN + 1) // +1 cho Button Semaphore
+
+static QueueHandle_t xUartQueue;
+static QueueHandle_t xCanQueue;
+static SemaphoreHandle_t xButtonSem;
+static QueueSetHandle_t xMasterQueueSet;
+
+void vSystemInitQueueSet(void)
+{
+    // 1. Tạo các thành viên độc lập
+    xUartQueue  = xQueueCreate(UART_QUEUE_LEN, sizeof(uint8_t));
+    xCanQueue   = xQueueCreate(CAN_QUEUE_LEN, sizeof(CanMessage_t));
+    xButtonSem  = xSemaphoreCreateBinary();
+
+    // 2. Tạo Queue Set với dung lượng tổng
+    xMasterQueueSet = xQueueCreateSet(COMBINED_SET_LEN);
+
+    // 3. Thêm các thành viên vào Set (LƯU Ý: Phải thêm khi chúng đang RỖNG)
+    xQueueAddToSet(xUartQueue, xMasterQueueSet);
+    xQueueAddToSet(xCanQueue, xMasterQueueSet);
+    xQueueAddToSet(xButtonSem, xMasterQueueSet);
+}
+
+void vMasterManagerTask(void *pvParameters)
+{
+    QueueSetMemberHandle_t xActivatedMember;
+    uint8_t ucUartChar;
+    CanMessage_t xCanMsg;
+
+    for( ;; )
+    {
+        // Block chờ BẤT KỲ thành viên nào trong Set có dữ liệu
+        xActivatedMember = xQueueSelectFromSet(xMasterQueueSet, portMAX_DELAY);
+
+        if(xActivatedMember == (QueueSetMemberHandle_t)xUartQueue)
+        {
+            // Dữ liệu đến từ UART
+            xQueueReceive(xUartQueue, &ucUartChar, 0); // Đọc ngay, timeout = 0 vì đã chắc chắn có
+            vProcessUartData(ucUartChar);
+        }
+        else if(xActivatedMember == (QueueSetMemberHandle_t)xCanQueue)
+        {
+            // Dữ liệu đến từ bus CAN
+            xQueueReceive(xCanQueue, &xCanMsg, 0);
+            vProcessCanFrame(&xCanMsg);
+        }
+        else if(xActivatedMember == (QueueSetMemberHandle_t)xButtonSem)
+        {
+            // Tín hiệu ngắt nút nhấn khẩn cấp
+            xSemaphoreTake(xButtonSem, 0);
+            vHandleEmergencyStop();
+        }
+    }
+}
+```
+
+---
+
+### <span style="color:#1abc9c">1.6 Mẫu Thiết kế Discriminated Union trên Queue (Đa dạng hóa Kiểu Thông điệp)</span>
+📗 *Nguồn: Mastering the FreeRTOS Real Time Kernel — Richard Barry (Chapter 4)*
+
+#### Đặt vấn đề
+* Trong kiến trúc nhúng chuẩn mực, việc tạo ra hàng chục Queue riêng lẻ cho từng loại cảm biến hoặc sự kiện sẽ làm cạn kiệt RAM và lãng phí tài nguyên quản lý của kernel.
+* **Mẫu Discriminated Union (Tagged Union):** Cho phép một Queue duy nhất vận chuyển được **nhiều cấu trúc dữ liệu hoàn toàn khác nhau** (cả kích thước và ý nghĩa).
+
+#### Cấu trúc thiết kế mẫu trong C:
+
+```c
+// 1. Định nghĩa enum định danh kiểu thông điệp (Discriminator / Tag)
+typedef enum {
+    eMsgTemperatureSensor,    // Dữ liệu nhiệt độ
+    eMsgPressureSensor,       // Dữ liệu áp suất
+    eMsgUserButtonEvent,      // Sự kiện nút bấm
+    eMsgNetworkStatusChange   // Trạng thái mạng
+} MessageType_t;
+
+// 2. Định nghĩa các cấu trúc dữ liệu con
+typedef struct {
+    float fTemperatureCelsius;
+    uint32_t ulSensorId;
+} TempData_t;
+
+typedef struct {
+    uint32_t ulPressureHPa;
+    uint8_t  ucStatusFlags;
+} PressureData_t;
+
+typedef struct {
+    uint8_t  ucButtonPin;
+    uint32_t ulPressDurationMs;
+} ButtonEvent_t;
+
+// 3. Định nghĩa Discriminated Union Struct
+typedef struct {
+    MessageType_t eType; // Trường phân loại thông điệp (bắt buộc)
+    union {
+        TempData_t     xTemp;
+        PressureData_t xPressure;
+        ButtonEvent_t  xButton;
+        uint32_t       ulNetworkStatusCode;
+    } uData; // Payload dùng chung vùng nhớ (kích thước bằng phần tử lớn nhất)
+} SystemMessage_t;
+```
+
+#### Cách gửi và giải mã thông điệp trên Queue:
+
+```c
+// Task phát dữ liệu nhiệt độ:
+void vTemperatureTask(void *pvParameters) {
+    SystemMessage_t xMsg;
+    xMsg.eType = eMsgTemperatureSensor;
+    xMsg.uData.xTemp.fTemperatureCelsius = 36.5f;
+    xMsg.uData.xTemp.ulSensorId = 1;
+    xQueueSend(xSystemQueue, &xMsg, portMAX_DELAY);
+}
+
+// Task trung tâm tiếp nhận và điều phối (Dispatcher Pattern):
+void vSystemDispatcherTask(void *pvParameters) {
+    SystemMessage_t xReceivedMsg;
+    for( ;; ) {
+        // Chờ nhận bất kỳ thông điệp nào từ Queue dùng chung
+        if(xQueueReceive(xSystemQueue, &xReceivedMsg, portMAX_DELAY) == pdPASS) {
+            switch(xReceivedMsg.eType) {
+                case eMsgTemperatureSensor:
+                    vLogTemperature(xReceivedMsg.uData.xTemp.fTemperatureCelsius);
+                    break;
+                case eMsgPressureSensor:
+                    vControlPump(xReceivedMsg.uData.xPressure.ulPressureHPa);
+                    break;
+                case eMsgUserButtonEvent:
+                    vHandleButton(xReceivedMsg.uData.xButton.ucButtonPin);
+                    break;
+                case eMsgNetworkStatusChange:
+                    vUpdateLedState(xReceivedMsg.uData.ulNetworkStatusCode);
+                    break;
+                default:
+                    configASSERT(pdFALSE); // Bẫy lỗi kiểu tin nhắn không xác định
+                    break;
+            }
+        }
+    }
+}
+```
+
+> [!TIP]
+> **Ưu điểm kiến trúc:**
+> 1. Tiết kiệm RAM: Chỉ cần duy nhất 1 Queue Control Block và 1 Task Handler.
+> 2. Dễ mở rộng: Khi có thêm cảm biến mới, chỉ cần thêm 1 trường vào `enum MessageType_t` và 1 struct vào `union uData` mà không cần sửa đổi API hay tạo thêm Queue mới.
+
+---
+
 ## <span style="color:#e67e22">2. RTOS Semaphore</span>
 
 ### <span style="color:#1abc9c">Khái niệm</span>
@@ -1114,7 +1303,231 @@ A hoàn thành → Give mutex → ngủ. Scheduler thấy B (pri 2) là highest 
 
 ---
 
-## <span style="color:#e67e22">4. So sánh tổng hợp: Queue vs Semaphore vs Mutex</span>
+## <span style="color:#e67e22">4. Software Timer Management (Quản Lý Timer Phần Mềm)</span> (Quản Lý Timer Phần Mềm)</span>
+
+📗 Nguồn: Mastering the FreeRTOS Real Time Kernel - Richard Barry
+
+### <span style="color:#1abc9c">Core Concepts</span>
+
+- Timer phần mềm thực thi callback function tại một thời điểm được cài đặt trước, **KHÔNG cần timer phần cứng** (ngoại trừ SysTick dùng cho RTOS tick).
+- **One-shot timer** (chạy 1 lần) vs **Auto-reload timer** (tự động lặp lại).
+- Timer có 2 trạng thái: **Dormant** (Không hoạt động) và **Running** (Đang hoạt động).
+- Chu kỳ (Period) được định nghĩa bằng ticks, thường dùng macro `pdMS_TO_TICKS()` để chuyển đổi từ mili-giây.
+
+#### <span style="color:#3498db">State Machine Diagram (Trạng Thái Timer)</span>
+
+```mermaid
+stateDiagram-v2
+    [*] --> Dormant
+    Dormant --> Running : xTimerStart()
+    Running --> Dormant : xTimerStop() / Timer Expire (One-shot)
+    Running --> Running : Timer Expire (Auto-reload) / xTimerReset()
+```
+
+### <span style="color:#1abc9c">The RTOS Daemon Task</span>
+
+- Tất cả timer callback đều được thực thi trong context của **cùng một daemon task duy nhất** (trước đây gọi là timer task).
+- Cấu hình trong `FreeRTOSConfig.h`: `configUSE_TIMERS`, `configTIMER_TASK_PRIORITY`, `configTIMER_TASK_STACK_DEPTH`, `configTIMER_QUEUE_LENGTH`.
+- Cơ chế **Timer Command Queue**: Các API của timer thực chất là ghi command (Lệnh) vào một queue. Daemon task đọc queue này và xử lý command.
+- Command chứa **time stamps** (dấu thời gian) khi command được gửi, giúp ngăn ngừa sai lệch thời gian (latency drift).
+- Hai kịch bản scheduling:
+  - Task ưu tiên cao hơn Daemon: Daemon task bị preempt, chạy sau khi task xong.
+  - Daemon ưu tiên cao hơn Task: Daemon chạy ngay, preempt task hiện tại.
+
+### <span style="color:#1abc9c">Timer Callback Rules (Quy Tắc CRITICAL Cho Callback)</span>
+
+> [!CAUTION]
+> - **Tuyệt đối KHÔNG bao giờ block** (không dùng `vTaskDelay`, không đọc queue với timeout > 0).
+> - Phải giữ hàm callback **cực kỳ ngắn gọn**.
+> - Tham số `xTicksToWait` phải luôn là `0` cho mọi API RTOS gọi bên trong callback.
+> - Tuyệt đối không gọi các hàm `FromISR` từ trong callback (vì đây là task context, KHÔNG phải ngắt ISR).
+
+### <span style="color:#1abc9c">Complete API Reference</span>
+
+| API | Chức năng |
+|-----|-----------|
+| `xTimerCreate()` | Tạo timer động (5 tham số: Tên, Chu kỳ, Auto-reload, ID, Callback). |
+| `xTimerCreateStatic()` | Có từ V9.0.0+, dùng bộ nhớ tĩnh (`StaticTimer_t`). |
+| `xTimerStart()` | Gửi lệnh Start vào command queue. |
+| `xTimerStop()` | Chuyển timer sang trạng thái Dormant. |
+| `xTimerReset()` | Tính toán lại thời gian hết hạn (từ thời điểm gọi hàm). |
+| `xTimerChangePeriod()` | Thay đổi chu kỳ (cũng có thể khởi động timer đang Dormant). |
+| `xTimerDelete()` | Xóa timer, giải phóng tài nguyên. |
+| `vTimerSetTimerID()` / `pvTimerGetTimerID()` | Truy cập Timer ID trực tiếp (không qua queue). |
+| `xTimerIsTimerActive()` | Kiểm tra xem timer có đang Running không. |
+| `xTimerPendFunctionCall()` | Chuyển giao công việc (deferred processing) cho daemon task. |
+
+*Lưu ý: Tất cả API điều khiển timer đều có phiên bản `FromISR` (vd: `xTimerStartFromISR()`) dùng trong ngắt.*
+
+#### <span style="color:#3498db">Callback Function Prototype</span>
+
+```c
+void ATimerCallback( TimerHandle_t xTimer );
+```
+
+### <span style="color:#1abc9c">Practical Examples</span>
+
+#### <span style="color:#3498db">Example 13: One-shot & Auto-reload timers</span>
+
+```c
+TimerHandle_t xAutoReloadTimer, xOneShotTimer;
+
+// Callback cho cả 2 timer
+void prvTimerCallback(TimerHandle_t xTimer) {
+    TickType_t xTimeNow = xTaskGetTickCount();
+    
+    // Kiểm tra xem timer nào vừa gọi callback
+    if (xTimer == xOneShotTimer) {
+        printf("One-shot timer expried at %d\n", xTimeNow);
+    } else {
+        printf("Auto-reload timer expired at %d\n", xTimeNow);
+    }
+}
+
+// Khởi tạo timer
+xOneShotTimer = xTimerCreate("OneShot", pdMS_TO_TICKS(3333), pdFALSE, 0, prvTimerCallback);
+xAutoReloadTimer = xTimerCreate("Reload", pdMS_TO_TICKS(500), pdTRUE, 0, prvTimerCallback);
+```
+
+#### <span style="color:#3498db">Example 14: Shared callback & ID làm bộ đếm</span>
+
+```c
+void prvSharedCallback(TimerHandle_t xTimer) {
+    uint32_t ulCount;
+    // Lấy giá trị đếm từ Timer ID
+    ulCount = (uint32_t) pvTimerGetTimerID(xTimer);
+    ulCount++;
+    
+    // Cập nhật lại ID
+    vTimerSetTimerID(xTimer, (void*)ulCount);
+    
+    // Dừng timer nếu đã chạy 5 lần
+    if (ulCount >= 5) {
+        xTimerStop(xTimer, 0);
+    }
+}
+```
+
+#### <span style="color:#3498db">Example 15: Mô phỏng đèn nền điện thoại (xTimerReset)</span>
+
+Mỗi khi người dùng ấn phím, timer được reset lại từ đầu (ví dụ: đèn sáng thêm 5s).
+
+```c
+// Bấm phím (giả lập ngắt) -> bật đèn và reset timer
+void vKeyPressCallback() {
+    TurnBacklightOn();
+    // Reset timer, đèn sẽ tắt sau 5s nếu không có phím nào được bấm
+    xTimerReset(xBacklightTimer, 0); 
+}
+```
+
+#### <span style="color:#3498db">Health Check Timer</span>
+Dùng `xTimerChangePeriod()` để chuyển từ chu kỳ 3s (bình thường) sang 200ms (lỗi).
+
+---
+
+---
+
+## <span style="color:#e67e22">5. Event Groups (Nhóm Sự Kiện)</span>
+
+📗 Nguồn: Mastering the FreeRTOS Real Time Kernel - Richard Barry
+
+### <span style="color:#1abc9c">Core Concepts</span>
+
+- **Event flags** là các bit (boolean) bên trong một biến kiểu `EventBits_t`.
+- Khi cấu hình `configUSE_16_BIT_TICKS=1` -> có **8 bit** sử dụng được, `=0` -> có **24 bit** sử dụng được (8 bit cao dành cho kernel).
+- Cơ chế giao tiếp **Many-to-many publish-subscribe**: nhiều task có thể set bit, nhiều task có thể chờ bit.
+- File source: phải include `event_groups.c` trong project.
+
+### <span style="color:#1abc9c">Key Differences from Queues/Semaphores</span>
+
+> [!TIP]
+> - **Wait on COMBINATION (Chờ sự kết hợp):** Có thể chờ nhiều bit cùng lúc với logic AND (đợi tất cả) hoặc OR (đợi 1 trong các bit).
+> - **BROADCAST (Phát sóng):** Khi set 1 bit, **TẤT CẢ** các task đang chờ bit đó đều được unblock (khác với queue/semaphore chỉ unblock task ưu tiên cao nhất).
+> - **Non-cumulative (Không cộng dồn):** Set một bit đã được set sẵn thì không có tác dụng phụ.
+> - **Cực kỳ tiết kiệm RAM:** 1 Event Group có thể thay thế tới 24 Binary Semaphores.
+
+### <span style="color:#1abc9c">Complete API Reference</span>
+
+| API | Chức năng |
+|-----|-----------|
+| `xEventGroupCreate()` / `xEventGroupCreateStatic()` | Tạo Event Group động / tĩnh. |
+| `xEventGroupSetBits()` | Task dùng để set bit (KHÔNG dùng trong ngắt). |
+| `xEventGroupSetBitsFromISR()` | Dùng trong ISR. Lệnh thực ra được đẩy vào Timer Command Queue cho daemon task chạy (Non-deterministic). Cần `configUSE_TIMERS=1`, `INCLUDE_xTimerPendFunctionCall=1`. |
+| `xEventGroupWaitBits()` | Chờ các bit được set (5 tham số: group, bits chờ, clearOnExit, waitForAllBits, timeout). |
+| `xEventGroupClearBits()` / `xEventGroupClearBitsFromISR()` | Xóa các bit thủ công / từ ngắt. |
+| `xEventGroupGetBits()` / `xEventGroupGetBitsFromISR()` | Đọc trạng thái các bit hiện tại. |
+| `xEventGroupSync()` | Dùng cho điểm hẹn (Rendezvous), vừa set bit báo hiệu vừa chờ các bit khác. |
+
+#### <span style="color:#3498db">Unblock Condition Matrix</span>
+
+| Các bit đang set | Bit cần chờ (`uxBitsToWaitFor`) | `xWaitForAllBits` | Kết quả |
+|------------------|--------------------------------|-------------------|---------|
+| `0b00000001`     | `0b00000101` (Bit 0 và 2)      | `pdFALSE` (OR)    | **UNBLOCK** (Vì bit 0 đã set) |
+| `0b00000001`     | `0b00000101` (Bit 0 và 2)      | `pdTRUE` (AND)    | **BLOCK** (Chưa đủ bit 2) |
+| `0b00000101`     | `0b00000101` (Bit 0 và 2)      | `pdTRUE` (AND)    | **UNBLOCK** (Đã đủ 2 bit) |
+| `0b00000100`     | `0b00000101` (Bit 0 và 2)      | `pdFALSE` (OR)    | **UNBLOCK** (Vì bit 2 đã set) |
+
+*Lưu ý:* Khi gọi `xEventGroupWaitBits` với `xClearOnExit=pdTRUE`, các bit chờ sẽ được tự động xóa (atomic clearing) để ngăn ngừa race condition.
+
+### <span style="color:#1abc9c">The Rendezvous Pattern (Điểm Hẹn Đồng Bộ)</span>
+
+- **Vấn đề Race Condition:** Nếu task gọi `SetBits()` rồi sau đó gọi `WaitBits()`, có thể một task khác ưu tiên cao nhất đã đọc được bit và làm sạch nó (clear) trước khi task đầu tiên kịp bắt đầu chờ.
+- **Giải pháp:** Dùng `xEventGroupSync()` thực hiện atomic (nguyên tử) cả thao tác Set và Wait (kèm Clear).
+- **Ví dụ đóng socket TCP:**
+  - `SocketTxTask` và `SocketRxTask` cùng phải kết thúc thì mới đóng được kết nối.
+  - Mỗi task dùng 1 bit báo hiệu xong, và dùng `Sync` để đợi task kia hoàn thành.
+
+### <span style="color:#1abc9c">Practical Examples</span>
+
+#### <span style="color:#3498db">Example 22: OR mode vs AND mode</span>
+
+```c
+// Ví dụ chờ 1 trong 2 sự kiện (OR)
+xEventGroupWaitBits(
+    xEventGroup,
+    (BIT_0 | BIT_1), // Chờ bit 0 hoặc bit 1
+    pdTRUE,          // Tự động clear bit sau khi thoát
+    pdFALSE,         // Chờ OR (không cần đợi tất cả)
+    portMAX_DELAY
+);
+```
+
+#### <span style="color:#3498db">Example 23: 3-task synchronization barrier using xEventGroupSync()</span>
+
+```c
+#define TASK_A_BIT (1 << 0)
+#define TASK_B_BIT (1 << 1)
+#define TASK_C_BIT (1 << 2)
+#define ALL_SYNC_BITS (TASK_A_BIT | TASK_B_BIT | TASK_C_BIT)
+
+void vTaskA(void *pvParameters) {
+    while(1) {
+        // Thực hiện công việc A...
+        
+        // Báo hiệu xong việc (Set TASK_A_BIT) và đợi B, C xong việc
+        xEventGroupSync(
+            xEventGroup,
+            TASK_A_BIT,     // Bit của mình
+            ALL_SYNC_BITS,  // Đợi tất cả
+            portMAX_DELAY
+        );
+        // Khi chạy đến đây, cả 3 task đều đã hoàn thành 1 vòng lặp.
+    }
+}
+```
+
+### <span style="color:#1abc9c">Best Practices</span>
+
+> [!IMPORTANT]
+> - Sử dụng event groups làm **barrier (rào cản) khởi tạo hệ thống**, bắt các task phải đợi tất cả các module init xong mới chạy tiếp.
+> - Ưu tiên để **tiết kiệm RAM** so với việc tạo hàng loạt semaphores (1 event group thay 24 semaphores).
+> - Rất phù hợp làm **tín hiệu Abort khẩn cấp (Emergency Abort)** nhờ khả năng Broadcast (báo cho nhiều task cùng lúc).
+> - Luôn cấu hình daemon task phù hợp khi cần ISR thao tác trên event group.
+
+---
+
+## <span style="color:#e67e22">6. So sánh tổng hợp & Hướng dẫn lựa chọn Primitive</span>
 
 ### <span style="color:#1abc9c">Bảng so sánh chi tiết</span>
 
@@ -1149,59 +1562,7 @@ graph TD
 
 ---
 
-## <span style="color:#e67e22">5. Câu hỏi ôn tập (từ sách)</span>
-
-1. **Primitive nào dùng phổ biến nhất để gửi/nhận data giữa các task?**
-   > → **Queue**. Thread-safe, FIFO, hỗ trợ timeout, tự đánh thức task đang chờ.
-
-2. **Queue có thể tương tác với nhiều hơn 2 task không?**
-   > → **Có**. Nhiều task có thể send vào cùng 1 queue (multiple producers), 1 task receive (single consumer). Hoặc ngược lại.
-
-3. **Primitive nào dùng cho signaling và synchronization?**
-   > → **Semaphore** (binary hoặc counting).
-
-4. **Ví dụ khi nào dùng counting semaphore?**
-   > → Khi cần **giới hạn số lượng** truy cập đồng thời. Ví dụ: hệ thống chỉ hỗ trợ **2 socket** cùng lúc → counting semaphore ceiling = 2.
-
-5. **1 khác biệt lớn giữa binary semaphore và mutex?**
-   > → Mutex có **priority inheritance** — tự động nâng priority task thấp đang giữ mutex khi task cao đang chờ. Binary semaphore **KHÔNG** có tính năng này → gây **priority inversion**.
-
-6. **Bảo vệ resource chia sẻ giữa các task: dùng binary semaphore hay mutex?**
-   > → **Mutex**. Vì mutex có priority inheritance, tránh priority inversion.
-
-7. **Priority inversion là gì và tại sao nguy hiểm?**
-   > → Priority inversion = task priority **cao bị chờ** trong khi task priority **thấp hơn** (không liên quan) lại đang chạy. Nguy hiểm vì **phá vỡ tính deterministic** — task quan trọng nhất không được chạy đúng lúc → **miss deadline** → hệ thống real-time fail.
-
 ---
-
-## <span style="color:#e67e22">📌 Tóm tắt chương (Key Takeaways)</span>
-
-```mermaid
-graph TD
-    ROOT["Chapter 3: Task Signaling<br/>and Communication"] --> Q["Queue<br/>= circular buffer<br/>FIFO, thread-safe"]
-    ROOT --> SEM["Semaphore<br/>= signaling"]
-    ROOT --> MUT["Mutex<br/>= mutual exclusion<br/>+ priority inheritance"]
-
-    Q --> Q1["Send/Receive data"]
-    Q --> Q2["Timeout on full/empty"]
-    Q --> Q3["Multi-producer OK"]
-
-    SEM --> S1["Counting: limit users"]
-    SEM --> S2["Binary: synchronize"]
-    SEM --> S3["Give = signal<br/>Take = wait"]
-
-    MUT --> M1["Like binary semaphore<br/>BUT with inheritance"]
-    MUT --> M2["Prevents priority<br/>inversion"]
-    MUT --> M3["Always use for<br/>shared resources"]
-
-
-    style ROOT fill:#1a5276,color:#fff,stroke:none
-    style Q fill:#e67e22,color:#fff,stroke:none
-    style SEM fill:#9b59b6,color:#fff,stroke:none
-    style MUT fill:#e74c3c,color:#fff,stroke:none
-```
-
-## <span style="color:#f1c40f">4. Hướng dẫn lựa chọn Queue / Semaphore / Mutex</span>
 
 ### <span style="color:#1abc9c">Cây quyết định nhanh</span>
 
@@ -1356,222 +1717,59 @@ xQueuePeek(tempMailbox, &current, 0);  // Peek = đọc mà không xóa
 
 ---
 
-## <span style="color:#e67e22">5. Software Timer Management (Quản Lý Timer Phần Mềm)</span>
+---
 
-📗 Nguồn: Mastering the FreeRTOS Real Time Kernel - Richard Barry
+## <span style="color:#e67e22">7. Câu hỏi ôn tập (từ sách)</span>
 
-### <span style="color:#1abc9c">Core Concepts</span>
+1. **Primitive nào dùng phổ biến nhất để gửi/nhận data giữa các task?**
+   > → **Queue**. Thread-safe, FIFO, hỗ trợ timeout, tự đánh thức task đang chờ.
 
-- Timer phần mềm thực thi callback function tại một thời điểm được cài đặt trước, **KHÔNG cần timer phần cứng** (ngoại trừ SysTick dùng cho RTOS tick).
-- **One-shot timer** (chạy 1 lần) vs **Auto-reload timer** (tự động lặp lại).
-- Timer có 2 trạng thái: **Dormant** (Không hoạt động) và **Running** (Đang hoạt động).
-- Chu kỳ (Period) được định nghĩa bằng ticks, thường dùng macro `pdMS_TO_TICKS()` để chuyển đổi từ mili-giây.
+2. **Queue có thể tương tác với nhiều hơn 2 task không?**
+   > → **Có**. Nhiều task có thể send vào cùng 1 queue (multiple producers), 1 task receive (single consumer). Hoặc ngược lại.
 
-#### <span style="color:#3498db">State Machine Diagram (Trạng Thái Timer)</span>
+3. **Primitive nào dùng cho signaling và synchronization?**
+   > → **Semaphore** (binary hoặc counting).
 
-```mermaid
-stateDiagram-v2
-    [*] --> Dormant
-    Dormant --> Running : xTimerStart()
-    Running --> Dormant : xTimerStop() / Timer Expire (One-shot)
-    Running --> Running : Timer Expire (Auto-reload) / xTimerReset()
-```
+4. **Ví dụ khi nào dùng counting semaphore?**
+   > → Khi cần **giới hạn số lượng** truy cập đồng thời. Ví dụ: hệ thống chỉ hỗ trợ **2 socket** cùng lúc → counting semaphore ceiling = 2.
 
-### <span style="color:#1abc9c">The RTOS Daemon Task</span>
+5. **1 khác biệt lớn giữa binary semaphore và mutex?**
+   > → Mutex có **priority inheritance** — tự động nâng priority task thấp đang giữ mutex khi task cao đang chờ. Binary semaphore **KHÔNG** có tính năng này → gây **priority inversion**.
 
-- Tất cả timer callback đều được thực thi trong context của **cùng một daemon task duy nhất** (trước đây gọi là timer task).
-- Cấu hình trong `FreeRTOSConfig.h`: `configUSE_TIMERS`, `configTIMER_TASK_PRIORITY`, `configTIMER_TASK_STACK_DEPTH`, `configTIMER_QUEUE_LENGTH`.
-- Cơ chế **Timer Command Queue**: Các API của timer thực chất là ghi command (Lệnh) vào một queue. Daemon task đọc queue này và xử lý command.
-- Command chứa **time stamps** (dấu thời gian) khi command được gửi, giúp ngăn ngừa sai lệch thời gian (latency drift).
-- Hai kịch bản scheduling:
-  - Task ưu tiên cao hơn Daemon: Daemon task bị preempt, chạy sau khi task xong.
-  - Daemon ưu tiên cao hơn Task: Daemon chạy ngay, preempt task hiện tại.
+6. **Bảo vệ resource chia sẻ giữa các task: dùng binary semaphore hay mutex?**
+   > → **Mutex**. Vì mutex có priority inheritance, tránh priority inversion.
 
-### <span style="color:#1abc9c">Timer Callback Rules (Quy Tắc CRITICAL Cho Callback)</span>
-
-> [!CAUTION]
-> - **Tuyệt đối KHÔNG bao giờ block** (không dùng `vTaskDelay`, không đọc queue với timeout > 0).
-> - Phải giữ hàm callback **cực kỳ ngắn gọn**.
-> - Tham số `xTicksToWait` phải luôn là `0` cho mọi API RTOS gọi bên trong callback.
-> - Tuyệt đối không gọi các hàm `FromISR` từ trong callback (vì đây là task context, KHÔNG phải ngắt ISR).
-
-### <span style="color:#1abc9c">Complete API Reference</span>
-
-| API | Chức năng |
-|-----|-----------|
-| `xTimerCreate()` | Tạo timer động (5 tham số: Tên, Chu kỳ, Auto-reload, ID, Callback). |
-| `xTimerCreateStatic()` | Có từ V9.0.0+, dùng bộ nhớ tĩnh (`StaticTimer_t`). |
-| `xTimerStart()` | Gửi lệnh Start vào command queue. |
-| `xTimerStop()` | Chuyển timer sang trạng thái Dormant. |
-| `xTimerReset()` | Tính toán lại thời gian hết hạn (từ thời điểm gọi hàm). |
-| `xTimerChangePeriod()` | Thay đổi chu kỳ (cũng có thể khởi động timer đang Dormant). |
-| `xTimerDelete()` | Xóa timer, giải phóng tài nguyên. |
-| `vTimerSetTimerID()` / `pvTimerGetTimerID()` | Truy cập Timer ID trực tiếp (không qua queue). |
-| `xTimerIsTimerActive()` | Kiểm tra xem timer có đang Running không. |
-| `xTimerPendFunctionCall()` | Chuyển giao công việc (deferred processing) cho daemon task. |
-
-*Lưu ý: Tất cả API điều khiển timer đều có phiên bản `FromISR` (vd: `xTimerStartFromISR()`) dùng trong ngắt.*
-
-#### <span style="color:#3498db">Callback Function Prototype</span>
-
-```c
-void ATimerCallback( TimerHandle_t xTimer );
-```
-
-### <span style="color:#1abc9c">Practical Examples</span>
-
-#### <span style="color:#3498db">Example 13: One-shot & Auto-reload timers</span>
-
-```c
-TimerHandle_t xAutoReloadTimer, xOneShotTimer;
-
-// Callback cho cả 2 timer
-void prvTimerCallback(TimerHandle_t xTimer) {
-    TickType_t xTimeNow = xTaskGetTickCount();
-    
-    // Kiểm tra xem timer nào vừa gọi callback
-    if (xTimer == xOneShotTimer) {
-        printf("One-shot timer expried at %d\n", xTimeNow);
-    } else {
-        printf("Auto-reload timer expired at %d\n", xTimeNow);
-    }
-}
-
-// Khởi tạo timer
-xOneShotTimer = xTimerCreate("OneShot", pdMS_TO_TICKS(3333), pdFALSE, 0, prvTimerCallback);
-xAutoReloadTimer = xTimerCreate("Reload", pdMS_TO_TICKS(500), pdTRUE, 0, prvTimerCallback);
-```
-
-#### <span style="color:#3498db">Example 14: Shared callback & ID làm bộ đếm</span>
-
-```c
-void prvSharedCallback(TimerHandle_t xTimer) {
-    uint32_t ulCount;
-    // Lấy giá trị đếm từ Timer ID
-    ulCount = (uint32_t) pvTimerGetTimerID(xTimer);
-    ulCount++;
-    
-    // Cập nhật lại ID
-    vTimerSetTimerID(xTimer, (void*)ulCount);
-    
-    // Dừng timer nếu đã chạy 5 lần
-    if (ulCount >= 5) {
-        xTimerStop(xTimer, 0);
-    }
-}
-```
-
-#### <span style="color:#3498db">Example 15: Mô phỏng đèn nền điện thoại (xTimerReset)</span>
-
-Mỗi khi người dùng ấn phím, timer được reset lại từ đầu (ví dụ: đèn sáng thêm 5s).
-
-```c
-// Bấm phím (giả lập ngắt) -> bật đèn và reset timer
-void vKeyPressCallback() {
-    TurnBacklightOn();
-    // Reset timer, đèn sẽ tắt sau 5s nếu không có phím nào được bấm
-    xTimerReset(xBacklightTimer, 0); 
-}
-```
-
-#### <span style="color:#3498db">Health Check Timer</span>
-Dùng `xTimerChangePeriod()` để chuyển từ chu kỳ 3s (bình thường) sang 200ms (lỗi).
+7. **Priority inversion là gì và tại sao nguy hiểm?**
+   > → Priority inversion = task priority **cao bị chờ** trong khi task priority **thấp hơn** (không liên quan) lại đang chạy. Nguy hiểm vì **phá vỡ tính deterministic** — task quan trọng nhất không được chạy đúng lúc → **miss deadline** → hệ thống real-time fail.
 
 ---
 
-## <span style="color:#e67e22">6. Event Groups (Nhóm Sự Kiện)</span>
+---
 
-📗 Nguồn: Mastering the FreeRTOS Real Time Kernel - Richard Barry
+## <span style="color:#e67e22">📌 Tóm tắt chương (Key Takeaways)</span>
 
-### <span style="color:#1abc9c">Core Concepts</span>
+```mermaid
+graph TD
+    ROOT["Chapter 3: Task Signaling<br/>and Communication"] --> Q["Queue<br/>= circular buffer<br/>FIFO, thread-safe"]
+    ROOT --> SEM["Semaphore<br/>= signaling"]
+    ROOT --> MUT["Mutex<br/>= mutual exclusion<br/>+ priority inheritance"]
 
-- **Event flags** là các bit (boolean) bên trong một biến kiểu `EventBits_t`.
-- Khi cấu hình `configUSE_16_BIT_TICKS=1` -> có **8 bit** sử dụng được, `=0` -> có **24 bit** sử dụng được (8 bit cao dành cho kernel).
-- Cơ chế giao tiếp **Many-to-many publish-subscribe**: nhiều task có thể set bit, nhiều task có thể chờ bit.
-- File source: phải include `event_groups.c` trong project.
+    Q --> Q1["Send/Receive data"]
+    Q --> Q2["Timeout on full/empty"]
+    Q --> Q3["Multi-producer OK"]
 
-### <span style="color:#1abc9c">Key Differences from Queues/Semaphores</span>
+    SEM --> S1["Counting: limit users"]
+    SEM --> S2["Binary: synchronize"]
+    SEM --> S3["Give = signal<br/>Take = wait"]
 
-> [!TIP]
-> - **Wait on COMBINATION (Chờ sự kết hợp):** Có thể chờ nhiều bit cùng lúc với logic AND (đợi tất cả) hoặc OR (đợi 1 trong các bit).
-> - **BROADCAST (Phát sóng):** Khi set 1 bit, **TẤT CẢ** các task đang chờ bit đó đều được unblock (khác với queue/semaphore chỉ unblock task ưu tiên cao nhất).
-> - **Non-cumulative (Không cộng dồn):** Set một bit đã được set sẵn thì không có tác dụng phụ.
-> - **Cực kỳ tiết kiệm RAM:** 1 Event Group có thể thay thế tới 24 Binary Semaphores.
+    MUT --> M1["Like binary semaphore<br/>BUT with inheritance"]
+    MUT --> M2["Prevents priority<br/>inversion"]
+    MUT --> M3["Always use for<br/>shared resources"]
 
-### <span style="color:#1abc9c">Complete API Reference</span>
 
-| API | Chức năng |
-|-----|-----------|
-| `xEventGroupCreate()` / `xEventGroupCreateStatic()` | Tạo Event Group động / tĩnh. |
-| `xEventGroupSetBits()` | Task dùng để set bit (KHÔNG dùng trong ngắt). |
-| `xEventGroupSetBitsFromISR()` | Dùng trong ISR. Lệnh thực ra được đẩy vào Timer Command Queue cho daemon task chạy (Non-deterministic). Cần `configUSE_TIMERS=1`, `INCLUDE_xTimerPendFunctionCall=1`. |
-| `xEventGroupWaitBits()` | Chờ các bit được set (5 tham số: group, bits chờ, clearOnExit, waitForAllBits, timeout). |
-| `xEventGroupClearBits()` / `xEventGroupClearBitsFromISR()` | Xóa các bit thủ công / từ ngắt. |
-| `xEventGroupGetBits()` / `xEventGroupGetBitsFromISR()` | Đọc trạng thái các bit hiện tại. |
-| `xEventGroupSync()` | Dùng cho điểm hẹn (Rendezvous), vừa set bit báo hiệu vừa chờ các bit khác. |
-
-#### <span style="color:#3498db">Unblock Condition Matrix</span>
-
-| Các bit đang set | Bit cần chờ (`uxBitsToWaitFor`) | `xWaitForAllBits` | Kết quả |
-|------------------|--------------------------------|-------------------|---------|
-| `0b00000001`     | `0b00000101` (Bit 0 và 2)      | `pdFALSE` (OR)    | **UNBLOCK** (Vì bit 0 đã set) |
-| `0b00000001`     | `0b00000101` (Bit 0 và 2)      | `pdTRUE` (AND)    | **BLOCK** (Chưa đủ bit 2) |
-| `0b00000101`     | `0b00000101` (Bit 0 và 2)      | `pdTRUE` (AND)    | **UNBLOCK** (Đã đủ 2 bit) |
-| `0b00000100`     | `0b00000101` (Bit 0 và 2)      | `pdFALSE` (OR)    | **UNBLOCK** (Vì bit 2 đã set) |
-
-*Lưu ý:* Khi gọi `xEventGroupWaitBits` với `xClearOnExit=pdTRUE`, các bit chờ sẽ được tự động xóa (atomic clearing) để ngăn ngừa race condition.
-
-### <span style="color:#1abc9c">The Rendezvous Pattern (Điểm Hẹn Đồng Bộ)</span>
-
-- **Vấn đề Race Condition:** Nếu task gọi `SetBits()` rồi sau đó gọi `WaitBits()`, có thể một task khác ưu tiên cao nhất đã đọc được bit và làm sạch nó (clear) trước khi task đầu tiên kịp bắt đầu chờ.
-- **Giải pháp:** Dùng `xEventGroupSync()` thực hiện atomic (nguyên tử) cả thao tác Set và Wait (kèm Clear).
-- **Ví dụ đóng socket TCP:**
-  - `SocketTxTask` và `SocketRxTask` cùng phải kết thúc thì mới đóng được kết nối.
-  - Mỗi task dùng 1 bit báo hiệu xong, và dùng `Sync` để đợi task kia hoàn thành.
-
-### <span style="color:#1abc9c">Practical Examples</span>
-
-#### <span style="color:#3498db">Example 22: OR mode vs AND mode</span>
-
-```c
-// Ví dụ chờ 1 trong 2 sự kiện (OR)
-xEventGroupWaitBits(
-    xEventGroup,
-    (BIT_0 | BIT_1), // Chờ bit 0 hoặc bit 1
-    pdTRUE,          // Tự động clear bit sau khi thoát
-    pdFALSE,         // Chờ OR (không cần đợi tất cả)
-    portMAX_DELAY
-);
+    style ROOT fill:#1a5276,color:#fff,stroke:none
+    style Q fill:#e67e22,color:#fff,stroke:none
+    style SEM fill:#9b59b6,color:#fff,stroke:none
+    style MUT fill:#e74c3c,color:#fff,stroke:none
 ```
 
-#### <span style="color:#3498db">Example 23: 3-task synchronization barrier using xEventGroupSync()</span>
-
-```c
-#define TASK_A_BIT (1 << 0)
-#define TASK_B_BIT (1 << 1)
-#define TASK_C_BIT (1 << 2)
-#define ALL_SYNC_BITS (TASK_A_BIT | TASK_B_BIT | TASK_C_BIT)
-
-void vTaskA(void *pvParameters) {
-    while(1) {
-        // Thực hiện công việc A...
-        
-        // Báo hiệu xong việc (Set TASK_A_BIT) và đợi B, C xong việc
-        xEventGroupSync(
-            xEventGroup,
-            TASK_A_BIT,     // Bit của mình
-            ALL_SYNC_BITS,  // Đợi tất cả
-            portMAX_DELAY
-        );
-        // Khi chạy đến đây, cả 3 task đều đã hoàn thành 1 vòng lặp.
-    }
-}
-```
-
-### <span style="color:#1abc9c">Best Practices</span>
-
-> [!IMPORTANT]
-> - Sử dụng event groups làm **barrier (rào cản) khởi tạo hệ thống**, bắt các task phải đợi tất cả các module init xong mới chạy tiếp.
-> - Ưu tiên để **tiết kiệm RAM** so với việc tạo hàng loạt semaphores (1 event group thay 24 semaphores).
-> - Rất phù hợp làm **tín hiệu Abort khẩn cấp (Emergency Abort)** nhờ khả năng Broadcast (báo cho nhiều task cùng lúc).
-> - Luôn cấu hình daemon task phù hợp khi cần ISR thao tác trên event group.

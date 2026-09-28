@@ -426,181 +426,20 @@ graph TD
 
 ---
 
-## <span style="color:#e67e22">3. Thông báo Trực tiếp đến Task — Direct Task Notifications</span>
+## <span style="color:#e67e22">3. Thông Báo Trực Tiếp Đến Task — Direct Task Notifications In-Depth</span>
 
-### <span style="color:#1abc9c">3.1 Khái niệm & Ưu điểm vượt trội của Direct Task Notifications</span>
-
-Mặc dù Queue rất linh hoạt, nhưng trong nhiều trường hợp ta chỉ cần gửi một tín hiệu hoặc một giá trị đơn giản đến một Task cụ thể. FreeRTOS cung cấp cơ chế **Direct Task Notifications (Thông báo trực tiếp)** với hiệu năng vượt trội.
-
-```mermaid
-graph TD
-    subgraph Direct_Task_Notification ["Cơ chế Direct Task Notification"]
-        TCB["TCB của Task Nhận (Task Control Block)<br/>----------------------------------------<br/>+ uint32_t ulNotifiedValue (Giá trị 32-bit)<br/>+ uint8_t ucNotifyState (Trạng thái Pending/Waiting)"]
-        SENDER["Sender Task / ISR"] -- "xTaskNotify() / xTaskNotifyFromISR()<br/>(Gửi trực tiếp vào TCB của Receiver)" --> TCB
-    end
-
-    style TCB fill:#1a5276,color:#fff,stroke:#fff
-    style SENDER fill:#d35400,color:#fff,stroke:#fff
-```
-
-#### Ưu điểm so với Queue / Semaphore:
-1. **Tốc độ nhanh hơn từ 25% đến 45%**: Không cần trải qua các thao tác quản lý cấu trúc hàng đợi phức tạp.
-2. **Tiết kiệm 100% RAM Overhead**: Không cần gọi hàm tạo đối tượng RAM (`xQueueCreate` / `xSemaphoreCreate`). Giá trị 32-bit đã có sẵn bên trong **TCB (Task Control Block)** của mỗi Task!
-
-#### Giới hạn:
-- Chỉ gửi được cho **duy nhất 1 Task nhận chỉ định** (thông qua Task Handle).
-- Ngắt ISR chỉ có thể gửi thông báo (`xTaskNotifyFromISR`), không thể nhận thông báo.
-- Không có khả năng xếp hàng đợi nhiều phần tử (chỉ chứa duy nhất 1 giá trị 32-bit).
-
----
-
-### <span style="color:#1abc9c">3.2 Truyền dữ liệu đơn giản bằng Task Notifications — Passing Simple Data Using Task Notifications</span>
-
-Sử dụng giá trị 32-bit làm **Bitmask** để bật/tắt các LED:
-
-```c
-#include "FreeRTOS.h"
-#include "task.h"
-
-// Định nghĩa các Bitmask cho từng LED
-#define RED_LED_MASK   0x0001
-#define BLUE_LED_MASK  0x0002
-#define GREEN_LED_MASK 0x0004
-
-// Task Handle của Task Nhận
-static TaskHandle_t recvTaskHandle = NULL;
-
-// 1. Task Nhận Notification (`recvTask`):
-void recvTask( void* NotUsed )
-{
-    while(1)
-    {
-        // Chờ nhận Notification. Hàm này vừa đọc vừa reset giá trị về 0 (pdTRUE)
-        uint32_t notificationValue = ulTaskNotifyTake(pdTRUE, portMAX_DELAY);
-        
-        // Kiểm tra từng Bitmask
-        if((notificationValue & RED_LED_MASK) != 0)   RedLed.On();   else RedLed.Off();
-        if((notificationValue & BLUE_LED_MASK) != 0)  BlueLed.On();  else BlueLed.Off();
-        if((notificationValue & GREEN_LED_MASK) != 0) GreenLed.On(); else GreenLed.Off();
-    }
-}
-
-// 2. Task Gửi Notification (`sendingTask`):
-void sendingTask( void* NotUsed )
-{
-    while(1)
-    {
-        // Gửi Notification trực tiếp đến recvTaskHandle kèm Bitmask RED_LED
-        xTaskNotify(recvTaskHandle, RED_LED_MASK, eSetValueWithOverwrite);
-        vTaskDelay(200 / portTICK_PERIOD_MS);
-
-        // Gửi Notification kèm Bitmask GREEN_LED
-        xTaskNotify(recvTaskHandle, GREEN_LED_MASK, eSetValueWithOverwrite);
-        vTaskDelay(200 / portTICK_PERIOD_MS);
-        
-        // Gửi Notification kèm Bitmask BLUE_LED
-        xTaskNotify(recvTaskHandle, BLUE_LED_MASK, eSetValueWithOverwrite);
-        vTaskDelay(200 / portTICK_PERIOD_MS);
-    }
-}
-
-int main(void)
-{
-    HWInit();
-
-    // Tạo Task và lưu lại Handle của recvTask
-    xTaskCreate(recvTask, "recvTask", 128, NULL, tskIDLE_PRIORITY + 2, &recvTaskHandle);
-    assert_param(recvTaskHandle != NULL);
-
-    xTaskCreate(sendingTask, "sendingTask", 128, NULL, tskIDLE_PRIORITY + 1, NULL);
-
-    vTaskStartScheduler();
-    while(1) {}
-}
-```
-
----
-
-### <span style="color:#1abc9c">3.3 Các Chế độ Hoạt động của Task Notification (`eNotifyAction`)</span>
-
-Khi gọi hàm `xTaskNotify(xTaskToNotify, ulValue, eAction)`, tham số `eAction` quyết định cách giá trị 32-bit được ghi vào TCB của Task nhận:
-
-| Hằng số `eNotifyAction` | Hành vi xử lý giá trị 32-bit | Ứng dụng thực tế thay thế |
-| :--- | :--- | :--- |
-| `eNoAction` | Phát thông báo mà **không thay đổi** giá trị notification value. | Thay thế **Binary Semaphore** (Tốc độ cực nhanh). |
-| `eSetBits` | Thực hiện phép **OR bitwise** (`ulNotifiedValue \|= ulValue`). | Truyền **Event Flags / Bitmasks** đa sự kiện. |
-| `eIncrement` | Tự động **tăng giá trị lên 1** (`ulNotifiedValue++`). | Thay thế **Counting Semaphore**. |
-| `eSetValueWithOverwrite` | **Ghi đè trực tiếp** giá trị mới kể cả khi giá trị cũ chưa được đọc. | Gửi lệnh mới nhất (Mailbox pattern). |
-| `eSetValueWithoutOverwrite` | Chỉ ghi nếu giá trị cũ đã được đọc. Nếu chưa đọc, hàm trả về `pdFAIL`. | Tránh ghi đè dữ liệu chưa xử lý. |
-
----
-
-### <span style="color:#1abc9c">3.4 Bảng so sánh Trực quan: Direct Task Notifications vs Queues vs Semaphores</span>
-
-| Tiêu chí | Direct Task Notifications | FreeRTOS Queue | Binary / Counting Semaphore |
-| :--- | :--- | :--- | :--- |
-| **Bộ nhớ RAM tốn thêm** | **0 Bytes** (Tích hợp sẵn trong TCB) | Tốn bộ nhớ cấp phát RAM Queue | Tốn bộ nhớ cấp phát RAM Semaphore |
-| **Tốc độ thực thi** | 🚀 **Nhanh nhất** (Hơn Queue 25-45%) | 🐢 Chậm hơn do copy & quản lý list | 🚗 Trung bình |
-| **Sức chứa dữ liệu** | 1 giá trị 32-bit (`uint32_t`) | N phần tử (mọi kích thước Struct) | Chỉ đếm số lượng (0/1 hoặc Count) |
-| **Số Task nhận** | Chỉ duy nhất **1 Task chỉ định** | **Nhiều Task** có thể chờ nhận | **Nhiều Task** có thể chờ nhận |
-| **Gửi từ ngắt ISR** | ✅ Có (`xTaskNotifyFromISR`) | ✅ Có (`xQueueSendFromISR`) | ✅ Có (`xSemaphoreGiveFromISR`) |
-
----
-
-## <span style="color:#e67e22">4. Tổng kết & Câu hỏi Ôn tập — Summary & Review Questions</span>
-
-### <span style="color:#1abc9c">4.1 Bảng tổng hợp các API trong Chương 9</span>
-
-| Hàm API FreeRTOS | Header | Mục đích sử dụng |
-| :--- | :--- | :--- |
-| `xQueueCreate(length, size)` | `queue.h` | Khởi tạo Queue trên FreeRTOS Heap. |
-| `xQueueSend(queue, &item, ticks)` | `queue.h` | Gửi phần tử vào đuôi Queue (FIFO). |
-| `xQueueReceive(queue, &buffer, ticks)` | `queue.h` | Rút phần tử khỏi đầu Queue. |
-| `xTaskNotify(handle, value, action)` | `task.h` | Gửi Direct Task Notification kèm hành động `eNotifyAction`. |
-| `ulTaskNotifyTake(clearOnExit, ticks)` | `task.h` | Nhận Notification kiểu Semaphore (đọc và giảm/clear value). |
-| `xTaskNotifyWait(entry, exit, &val, ticks)`| `task.h` | Nhận Notification kiểu Bitmask hoặc giá trị đầy đủ. |
-
----
-
-### <span style="color:#1abc9c">4.2 Đáp án Câu hỏi Ôn tập từ Sách (Review Questions & Answers)</span>
-
-#### Câu 1: Các kiểu dữ liệu nào có thể được truyền vào Queue?
-> **Đáp án:** **BẤT KỲ KIỂU DỮ LIỆU NÀO** (từ `uint8_t`, `int`, `float`, các cấu trúc `struct` phức tạp, cho đến các con trỏ `pointer`). Vì hàm Queue nhận tham số kiểu `void*` và kích thước byte cố định lúc tạo.
-
-#### Câu 2: Chuyện gì xảy ra với Task khi nó cố thao tác trên Queue trong lúc chờ đợi?
-> **Đáp án:** Task sẽ chuyển sang trạng thái **`BLOCKED` (Đi ngủ 💤)** và tiêu thụ **0% CPU** cho đến khi có dữ liệu trong Queue (nếu đọc) / có chỗ trống trong Queue (nếu gửi) hoặc cho đến khi hết thời gian Timeout.
-
-#### Câu 3: Nêu một lưu ý quan trọng cần cân nhắc khi truyền dữ liệu qua Queue bằng Tham chiếu (Pass by Reference)?
-> **Đáp án:** Dữ liệu gốc **KHÔNG ĐƯỢC NẰM TRÊN STACK** (không dùng biến cục bộ hàm). Vùng nhớ được trỏ đến phải tồn tại cố định trên RAM trong suốt quá trình xử lý (dùng biến `global`, `static`, hoặc cấp phát động `pvPortMalloc`). Đồng thời phải làm rõ Quyền sở hữu dữ liệu (Data Ownership) để free RAM đúng lúc.
-
-#### Câu 4: Direct Task Notifications có thể thay thế hoàn toàn Queues: Đúng hay Sai?
-> **Đáp án:** **FALSE (Sai)**. Direct Task Notifications chỉ có thể gửi đến **1 Task duy nhất**, chỉ chứa 1 giá trị 32-bit và không có khả năng đệm nhiều phần tử như Queue.
-
-#### Câu 5: Direct Task Notifications có thể gửi dữ liệu thuộc bất kỳ kiểu nào: Đúng hay Sai?
-> **Đáp án:** **FALSE (Sai)**. Direct Task Notifications bị giới hạn chỉ truyền duy nhất **1 giá trị số nguyên 32-bit (`uint32_t`)** (hoặc các Bitmask).
-
-#### Câu 6: Những ưu điểm của Direct Task Notifications so với Queue là gì?
-> **Đáp án:** 
-> 1. **Tốc độ thực thi nhanh hơn từ 25% đến 45%**.
-> 2. **Không tốn tài nguyên RAM overhead** (vì tận dụng giá trị sẵn có trong TCB của Task nhận).
-> 3. Cung cấp các chế độ thao tác Bitwise (`eSetBits`), Tăng giá trị (`eIncrement`), hoặc Ghi đè (`eSetValueWithOverwrite`) rất linh hoạt.
-
----
-
-## <span style="color:#e67e22">5. Thông Báo Tác Vụ chuyên sâu (Task Notifications In-Depth)</span>
-
-### <span style="color:#1abc9c">5.1 Kiến trúc Cốt lõi (Core Architecture)</span>
+### <span style="color:#1abc9c">3.1 Kiến trúc Cốt lõi (Core Architecture)</span>
 - Mô hình truyền thông trực tiếp đến Task (không qua đối tượng trung gian).
 - Mỗi Task có 2 trường tích hợp sẵn trong TCB: **Notification State** (Pending/Not-Pending) và **Notification Value** (`uint32_t`).
 - Cấu hình kích hoạt: `configUSE_TASK_NOTIFICATIONS = 1`
 - Dung lượng: Tốn 8 bytes RAM cho mỗi Task (so với 70-80+ bytes cho một Queue).
 
-### <span style="color:#1abc9c">5.2 Lợi ích Hiệu suất (Performance Benefits)</span>
+### <span style="color:#1abc9c">3.2 Lợi ích Hiệu suất (Performance Benefits)</span>
 - Nhanh hơn đáng kể so với queues/semaphores (đường dẫn mã nguồn tối giản, không cần duyệt danh sách liên kết).
 - Hoàn toàn **không cần cấp phát bộ nhớ động (Zero dynamic allocation)**.
 - Các Task sẵn sàng nhận thông báo ngay lập tức khi vừa được tạo ra.
 
-### <span style="color:#1abc9c">5.3 5 Giới hạn Cốt lõi (5 Limitations)</span>
+### <span style="color:#1abc9c">3.3 5 Giới hạn Cốt lõi (5 Limitations)</span>
 > [!IMPORTANT]
 > Cần lưu ý 5 hạn chế sau khi sử dụng Task Notifications:
 1. **Không thể gửi đến ISR**: ISR không có TCB (Task Control Block).
@@ -609,7 +448,7 @@ Khi gọi hàm `xTaskNotify(xTaskToNotify, ulValue, eAction)`, tham số `eActio
 4. **Không thể phát sóng (broadcast)**: Không gửi được cho nhiều Task cùng lúc.
 5. **Không thể block (chờ) khi gửi**: Task gửi không thể chờ cho đến khi gửi xong (chỉ Task nhận mới có thể block để chờ nhận).
 
-### <span style="color:#1abc9c">5.4 Tham chiếu API Hoàn chỉnh (Complete API Reference)</span>
+### <span style="color:#1abc9c">3.4 Tham chiếu API Hoàn chỉnh (Complete API Reference)</span>
 
 #### <span style="color:#3498db">▸ API Give/Take Cơ bản (Lightweight Semaphore Replacement)</span>
 1. `xTaskNotifyGive(xTaskToNotify)`: Luôn trả về `pdPASS`, tăng giá trị notification lên 1.
@@ -633,7 +472,7 @@ Khi gọi hàm `xTaskNotify(xTaskToNotify, ulValue, eAction)`, tham số `eActio
    - `pulNotificationValue`: Biến lưu trữ giá trị trước khi bị xóa ở bước exit.
 7. `xTaskNotifyStateClear(xTask)`: Chuyển trạng thái từ Pending sang Not-Pending mà không làm thay đổi giá trị.
 
-### <span style="color:#1abc9c">5.5 Các Mẫu Thay thế (Replacement Patterns)</span>
+### <span style="color:#1abc9c">3.5 Các Mẫu Thay thế (Replacement Patterns)</span>
 
 | Đối tượng RTOS (RTOS Object) | Cấu hình Notification Tương đương | API Gửi (Send API) | API Nhận (Receive API) | Ghi chú (Notes) |
 |---|---|---|---|---|
@@ -643,7 +482,7 @@ Khi gọi hàm `xTaskNotify(xTaskToNotify, ulValue, eAction)`, tham số `eActio
 | Mailbox | Ghi đè (Overwrite) | `xTaskNotify(..., eSetValueWithOverwrite)` | `xTaskNotifyWait(...)` | Giá trị mới nhất (Latest value) |
 | Queue 1-Phần tử | Không ghi đè (No overwrite) | `xTaskNotify(..., eSetValueWithoutOverwrite)` | `xTaskNotifyWait(...)` | `pdFAIL` nếu đầy |
 
-### <span style="color:#1abc9c">5.6 Ví dụ Driver Thực tế (Real-World Driver Examples)</span>
+### <span style="color:#1abc9c">3.6 Ví dụ Driver Thực tế (Real-World Driver Examples)</span>
 
 #### <span style="color:#3498db">▸ 1. Driver Truyền UART (UART Transmit Driver - Listing 155 pattern)</span>
 ```c
@@ -788,7 +627,7 @@ void vCloudServerTask(void *pvParameters)
 }
 ```
 
-### <span style="color:#1abc9c">5.7 Bảng So sánh Toàn diện (Comprehensive Comparison Table)</span>
+### <span style="color:#1abc9c">3.7 Bảng So sánh Toàn diện (Comprehensive Comparison Table)</span>
 
 | Tính năng | Task Notifications | FreeRTOS Queues | Semaphores | Event Groups |
 |---|---|---|---|---|
@@ -802,7 +641,7 @@ void vCloudServerTask(void *pvParameters)
 | **Gửi từ ngắt (ISR Support)**| ✅ Hỗ trợ (`*FromISR`) | ✅ Hỗ trợ | ✅ Hỗ trợ | ✅ Hỗ trợ |
 | **Priority Inheritance** | ❌ Không hỗ trợ | ❌ Không hỗ trợ | ✅ Chỉ Mutex | ❌ Không hỗ trợ |
 
-### <span style="color:#1abc9c">5.8 Các Thực hành Tốt nhất (Best Practices)</span>
+### <span style="color:#1abc9c">3.8 Các Thực hành Tốt nhất (Best Practices)</span>
 > [!TIP]
 > - **Sử dụng làm mặc định (DEFAULT)** cho việc đồng bộ 1-1 (luôn ưu tiên thay vì dùng semaphores).
 > - Chỉ **chuyển sang Queues/Semaphores** khi Task Notifications chạm tới các giới hạn (ví dụ: cần nhiều task nhận, hoặc cần đệm lượng dữ liệu lớn).
@@ -812,3 +651,45 @@ void vCloudServerTask(void *pvParameters)
 ---
 
 [⬅️ Chương trước: Chương 8](#) | [Chương tiếp theo: Chương 10 ➡️](#)
+
+---
+
+## <span style="color:#e67e22">4. Tổng kết & Câu hỏi Ôn tập — Summary & Review Questions</span>
+
+### <span style="color:#1abc9c">4.1 Bảng tổng hợp các API trong Chương 9</span>
+
+| Hàm API FreeRTOS | Header | Mục đích sử dụng |
+| :--- | :--- | :--- |
+| `xQueueCreate(length, size)` | `queue.h` | Khởi tạo Queue trên FreeRTOS Heap. |
+| `xQueueSend(queue, &item, ticks)` | `queue.h` | Gửi phần tử vào đuôi Queue (FIFO). |
+| `xQueueReceive(queue, &buffer, ticks)` | `queue.h` | Rút phần tử khỏi đầu Queue. |
+| `xTaskNotify(handle, value, action)` | `task.h` | Gửi Direct Task Notification kèm hành động `eNotifyAction`. |
+| `ulTaskNotifyTake(clearOnExit, ticks)` | `task.h` | Nhận Notification kiểu Semaphore (đọc và giảm/clear value). |
+| `xTaskNotifyWait(entry, exit, &val, ticks)`| `task.h` | Nhận Notification kiểu Bitmask hoặc giá trị đầy đủ. |
+
+---
+
+### <span style="color:#1abc9c">4.2 Đáp án Câu hỏi Ôn tập từ Sách (Review Questions & Answers)</span>
+
+#### Câu 1: Các kiểu dữ liệu nào có thể được truyền vào Queue?
+> **Đáp án:** **BẤT KỲ KIỂU DỮ LIỆU NÀO** (từ `uint8_t`, `int`, `float`, các cấu trúc `struct` phức tạp, cho đến các con trỏ `pointer`). Vì hàm Queue nhận tham số kiểu `void*` và kích thước byte cố định lúc tạo.
+
+#### Câu 2: Chuyện gì xảy ra với Task khi nó cố thao tác trên Queue trong lúc chờ đợi?
+> **Đáp án:** Task sẽ chuyển sang trạng thái **`BLOCKED` (Đi ngủ 💤)** và tiêu thụ **0% CPU** cho đến khi có dữ liệu trong Queue (nếu đọc) / có chỗ trống trong Queue (nếu gửi) hoặc cho đến khi hết thời gian Timeout.
+
+#### Câu 3: Nêu một lưu ý quan trọng cần cân nhắc khi truyền dữ liệu qua Queue bằng Tham chiếu (Pass by Reference)?
+> **Đáp án:** Dữ liệu gốc **KHÔNG ĐƯỢC NẰM TRÊN STACK** (không dùng biến cục bộ hàm). Vùng nhớ được trỏ đến phải tồn tại cố định trên RAM trong suốt quá trình xử lý (dùng biến `global`, `static`, hoặc cấp phát động `pvPortMalloc`). Đồng thời phải làm rõ Quyền sở hữu dữ liệu (Data Ownership) để free RAM đúng lúc.
+
+#### Câu 4: Direct Task Notifications có thể thay thế hoàn toàn Queues: Đúng hay Sai?
+> **Đáp án:** **FALSE (Sai)**. Direct Task Notifications chỉ có thể gửi đến **1 Task duy nhất**, chỉ chứa 1 giá trị 32-bit và không có khả năng đệm nhiều phần tử như Queue.
+
+#### Câu 5: Direct Task Notifications có thể gửi dữ liệu thuộc bất kỳ kiểu nào: Đúng hay Sai?
+> **Đáp án:** **FALSE (Sai)**. Direct Task Notifications bị giới hạn chỉ truyền duy nhất **1 giá trị số nguyên 32-bit (`uint32_t`)** (hoặc các Bitmask).
+
+#### Câu 6: Những ưu điểm của Direct Task Notifications so với Queue là gì?
+> **Đáp án:** 
+> 1. **Tốc độ thực thi nhanh hơn từ 25% đến 45%**.
+> 2. **Không tốn tài nguyên RAM overhead** (vì tận dụng giá trị sẵn có trong TCB của Task nhận).
+> 3. Cung cấp các chế độ thao tác Bitwise (`eSetBits`), Tăng giá trị (`eIncrement`), hoặc Ghi đè (`eSetValueWithOverwrite`) rất linh hoạt.
+
+---

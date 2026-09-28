@@ -997,7 +997,7 @@ if( xTaskGetTickCount() != xTimeAtWhichMutexWasTaken )
 
 ## <span style="color:#e67e22">5. Sử dụng Bộ định thời Phần mềm — Using Software Timers</span>
 
-### <span style="color:#1abc9c">6.1 So sánh Software Timers vs Hardware Peripheral Timers</span>
+### <span style="color:#1abc9c">5.1 So sánh Software Timers vs Hardware Peripheral Timers</span>
 
 Các vi điều khiển như STM32F7 có sẵn rất nhiều bộ Timer phần cứng (TIM1 - TIM14). Tuy nhiên, FreeRTOS cung cấp thêm cơ chế **Software Timers** với những ưu/nhược điểm rõ rệt:
 
@@ -1025,7 +1025,7 @@ graph TD
 
 ---
 
-### <span style="color:#1abc9c">6.2 Cảnh báo Cốt lõi về Callback Function</span>
+### <span style="color:#1abc9c">5.2 Cảnh báo Cốt lõi về Callback Function</span>
 
 Khi bật Software Timers, FreeRTOS sẽ tự động tạo ra một Task hệ thống ngầm tên là **`TmrSvc` (Timer Service Task)**.
 

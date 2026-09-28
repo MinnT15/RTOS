@@ -1676,7 +1676,7 @@ graph TD
 
 ---
 
-## <span style="color:#e67e22">12. Câu hỏi ôn tập (từ sách)</span>
+## <span style="color:#e67e22">11. Câu hỏi ôn tập (từ sách)</span>
 
 1. **Super loop là gì?**
    > → **Cả hai**: (a) Một vòng lặp while vô hạn, VÀ (b) vòng lặp quản lý toàn bộ function call trong embedded system.
