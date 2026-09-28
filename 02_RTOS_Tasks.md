@@ -886,6 +886,63 @@ Hệ thống đơn giản:                    Hệ thống phức tạp:
 
 ---
 
+### <span style="color:#1abc9c">4.4 Mổ xẻ Cấu trúc Dữ liệu Khối Điều khiển Task — TCB (Task Control Block)</span>
+📗 *Nguồn: Mastering the FreeRTOS Real Time Kernel — Richard Barry & FreeRTOS tasks.c*
+
+Trong mã nguồn `tasks.c`, mỗi Task được quản lý bởi một `struct tskTaskControlBlock` (viết tắt là **TCB**). Đây là "chứng minh thư" của Task trong hệ điều hành:
+
+```c
+typedef struct tskTaskControlBlock
+{
+    // 1. Con trỏ đỉnh Stack hiện tại (BẮT BUỘC ĐỨNG ĐẦU TIÊN CỦA STRUCT)
+    volatile StackType_t *pxTopOfStack;
+
+    #if ( portUSING_MPU_WRAPPERS == 1 )
+        xMPU_SETTINGS xMPUSettings; // Cấu hình phân vùng MPU nếu có
+    #endif
+
+    // 2. Node danh sách trạng thái (Ready, Blocked, Suspended)
+    ListItem_t xStateListItem;
+
+    // 3. Node danh sách sự kiện (chờ Queue, Semaphore, Event Group)
+    ListItem_t xEventListItem;
+
+    // 4. Độ ưu tiên hiện tại của Task (có thể thay đổi tạm thời do Priority Inheritance)
+    UBaseType_t uxPriority;
+
+    // 5. Con trỏ trỏ tới đáy vùng nhớ Stack (dùng để phát hiện tràn stack)
+    StackType_t *pxStack;
+
+    // 6. Tên Task dạng chuỗi (dùng cho debug, tối đa configMAX_TASK_NAME_LEN ký tự)
+    char pcTaskName[ configMAX_TASK_NAME_LEN ];
+
+    #if ( configUSE_MUTEXES == 1 )
+        // 7. Độ ưu tiên gốc (Base Priority) để khôi phục sau khi trả Mutex
+        UBaseType_t uxBasePriority;
+        UBaseType_t uxMutexesHeld; // Số lượng Mutex task đang giữ
+    #endif
+
+    #if ( configUSE_TASK_NOTIFICATIONS == 1 )
+        // 8. Trường hỗ trợ Direct Task Notifications (tiết kiệm RAM)
+        volatile uint32_t ulNotifiedValue;
+        volatile uint8_t  ucNotifyState;
+    #endif
+
+    #if ( configNUM_THREAD_LOCAL_STORAGE_POINTERS > 0 )
+        // 9. Mảng con trỏ Thread Local Storage (TLS)
+        void *pvThreadLocalStoragePointers[ configNUM_THREAD_LOCAL_STORAGE_POINTERS ];
+    #endif
+
+} tskTCB;
+typedef tskTCB TCB_t;
+```
+
+> [!IMPORTANT]
+> **Tại sao `pxTopOfStack` bắt buộc phải là trường đầu tiên của struct TCB?**
+> Vì trong mã lệnh Assembly chuyển ngữ cảnh (`port.c`), biến con trỏ `pxCurrentTCB` trỏ thẳng tới địa chỉ đầu tiên của struct TCB. Khi `pxTopOfStack` nằm ở offset 0, CPU chỉ cần 1 lệnh hợp ngữ duy nhất (`LDR R0, [R1]`) để nạp ngay con trỏ stack của task mà không tốn chu kỳ tính toán offset địa chỉ!
+
+---
+
 ## <span style="color:#e67e22">5. Mô hình lập trình Task (Theoretical Model)</span>
 
 ### <span style="color:#1abc9c">So sánh code: Super Loop vs RTOS Tasks</span>
@@ -1140,6 +1197,41 @@ Khi nào overhead trở nên đáng kể?
 > #define configUSE_PREEMPTION      1  // Bật preemptive
 > #define configUSE_TIME_SLICING    1  // Bật round-robin cho cùng priority
 > ```
+
+---
+
+### <span style="color:#1abc9c">6.5 Chi tiết Phần Cứng ARM Cortex-M: CONTROL Register, EXC_RETURN & FPU Lazy Stacking</span>
+📘 *Nguồn: Hands-On RTOS with Microcontrollers — Brian Amos & ARM Cortex-M Architecture Manual*
+
+Để trở thành một kỹ sư Senior làm chủ việc chuyển ngữ cảnh, bạn bắt buộc phải hiểu 3 cơ chế phần cứng của lõi Cortex-M:
+
+#### 1. Thanh ghi điều khiển đặc biệt `CONTROL`:
+Lõi ARM Cortex-M có 2 chế độ đặc quyền và 2 con trỏ ngăn xếp được điều khiển bởi thanh ghi `CONTROL`:
+
+```
+Bit [1] SPSEL:  0 = Dùng Main Stack Pointer (MSP) | 1 = Dùng Process Stack Pointer (PSP)
+Bit [0] nPRIV:  0 = Privileged Mode (Đặc quyền)   | 1 = Unprivileged Mode (Hạn chế)
+```
+
+* Khi chip khởi động: `CONTROL = 0` (Chạy ở Privileged mode, dùng MSP).
+* Khi FreeRTOS chạy: Mỗi Task chạy ở Thread mode, chuyển sang dùng **PSP**. Trình phục vụ ngắt (ISR) luôn tự động chuyển về dùng **MSP**.
+
+#### 2. Giá trị mã ma thuật `EXC_RETURN` trong thanh ghi `LR` (Link Register):
+Khi một ngắt (SysTick hoặc PendSV) xảy ra, thanh ghi `LR` không chứa địa chỉ hàm thông thường, mà được phần cứng tự động ghi đè một giá trị đặc biệt gọi là **`EXC_RETURN`**:
+
+| Giá trị `EXC_RETURN` | Chế độ quay về (Return Mode) | Stack Pointer sử dụng | Trạng thái FPU |
+| :--- | :--- | :--- | :--- |
+| `0xFFFFFFF1` | Handler Mode (Ngắt lồng nhau) | MSP | Không dùng FPU |
+| `0xFFFFFFF9` | Thread Mode (Quay về Task) | MSP | Không dùng FPU |
+| `0xFFFFFFFD` | **Thread Mode (Quay về Task chuẩn)** | **PSP** | Không dùng FPU |
+| `0xFFFFFFED` | **Thread Mode (Quay về Task có FPU)** | **PSP** | **Có lưu khung FPU mở rộng** |
+
+*Khi kết thúc hàm ngắt bằng lệnh `BX LR`, phần cứng CPU đọc giá trị `EXC_RETURN` này để tự động biết cần pop các thanh ghi từ MSP hay PSP!*
+
+#### 3. Cơ chế FPU Lazy Stacking (Lưu trữ lười cho dấu phẩy động):
+Trên vi điều khiển Cortex-M4F và Cortex-M7F có bộ xử lý dấu phẩy động (FPU) với 32 thanh ghi 32-bit (`S0` đến `S31`) và thanh ghi trạng thái `FPSCR`:
+* Nếu mỗi lần chuyển ngữ cảnh đều lưu cả 32 thanh ghi FPU $ightarrow$ Tốn thêm **136 bytes stack** và hàng chục chu kỳ clock!
+* **Giải pháp Lazy Stacking của ARM:** Phần cứng chỉ cấp phát chỗ trống trên stack nhưng **chưa lưu dữ liệu thực tế**. Chỉ khi nào Task thực sự thực hiện một lệnh tính toán FPU (như cộng trừ số thực `float`), phần cứng mới kích hoạt lưu các thanh ghi `S0-S15` vào stack. Các task chỉ tính toán số nguyên thuần túy sẽ hoàn toàn không bị tốn chi phí này.
 
 ---
 
@@ -1505,6 +1597,37 @@ graph TD
 > ```
 
 
+
+---
+
+### <span style="color:#1abc9c">7.5 Hai Mô hình Xử lý Cốt lõi & 4 Thí nghiệm Kinh điển của Richard Barry</span>
+📗 *Nguồn: Mastering the FreeRTOS Real Time Kernel — Richard Barry (Examples 1, 2, 3, 4)*
+
+Richard Barry chia tác vụ trong hệ thống Real-Time thành 2 mô hình vận hành cơ bản:
+
+```mermaid
+graph TD
+    TASK_TYPES["Phân loại Tác vụ Real-Time"] --> CONT["1. Tác vụ Xử lý Liên tục (Continuous Processing)<br/>---------------------------------------------<br/>• Không bao giờ tự nguyện Block<br/>• Luôn ở trạng thái Ready hoặc Running<br/>• Bắt buộc phải đặt ở mức ưu tiên thấp nhất (tskIDLE_PRIORITY)<br/>• Ví dụ: Thuật toán tính toán nền, lọc số liệu"]
+    TASK_TYPES --> PERIOD["2. Tác vụ Xử lý Định kỳ (Periodic Processing)<br/>---------------------------------------------<br/>• Thực hiện công việc xong rồi chủ động ngủ (Blocked)<br/>• Chờ sự kiện ngắt hoặc thời gian (vTaskDelayUntil)<br/>• Có thể đặt ở độ ưu tiên cao mà không làm nghẽn CPU<br/>• Ví dụ: Đọc cảm biến 100Hz, cập nhật màn hình"]
+```
+
+#### Bốn thí nghiệm nền tảng về Lập lịch (Richard Barry Experiments):
+
+* **Thí nghiệm 1 (Example 1 — Tạo 2 task độc lập cùng độ ưu tiên):**
+  * Tạo Task 1 và Task 2 cùng chạy ở Priority 1, thực hiện in chuỗi liên tục.
+  * *Quan sát:* Hai task chia sẻ thời gian luân phiên nhau (Round-Robin). Mỗi khi ngắt SysTick 1ms xảy ra, kernel tự động chuyển ngữ cảnh từ Task 1 sang Task 2.
+* **Thí nghiệm 2 (Example 2 — Tái sử dụng 1 hàm task với tham số `pvParameters`):**
+  * Thay vì viết 2 hàm giống hệt nhau, chỉ viết duy nhất 1 hàm `vTaskFunction(void *pvParameters)`.
+  * Truyền con trỏ chuỗi `"Task 1
+"` khi tạo Task 1 và `"Task 2
+"` khi tạo Task 2.
+  * *Kết luận:* Mỗi Task có stack riêng chứa biến con trỏ độc lập $ightarrow$ Hàm C hoàn toàn có tính tái nhập (Re-entrant).
+* **Thí nghiệm 3 (Example 3 — Thử nghiệm chênh lệch Độ ưu tiên):**
+  * Giữ nguyên 2 task liên tục, nhưng đặt Task 1 ở Priority 1, Task 2 ở Priority 2.
+  * *Kết quả:* **Task 1 bị bỏ đói hoàn toàn (Starvation)!** Task 2 vì không bao giờ nhường CPU và có độ ưu tiên cao hơn, nên nó chiếm trọn 100% thời gian xử lý.
+* **Thí nghiệm 4 (Example 4 — Chuyển Continuous Task thành Periodic Task bằng Delay):**
+  * Bổ sung hàm `vTaskDelay(pdMS_TO_TICKS(250))` vào cuối vòng lặp của Task 2.
+  * *Kết quả:* Ngay khi Task 2 gọi `vTaskDelay()`, nó chuyển từ `Running` sang `Blocked`. Scheduler lập tức cho Task 1 chạy. Khi hết 250ms, Task 2 unblock và cướp quyền Task 1 ngay lập tức. Hệ thống hoạt động hài hòa và đúng thiết kế.
 
 ---
 

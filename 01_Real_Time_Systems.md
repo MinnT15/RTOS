@@ -74,6 +74,25 @@
 
 ---
 
+### <span style="color:#1abc9c">1.2 Mười một Lợi ích Cốt lõi của việc sử dụng Real-Time Kernel</span>
+📗 *Nguồn: Mastering the FreeRTOS Real Time Kernel — Richard Barry (Preface)*
+
+Tại sao không tiếp tục dùng Super Loop mà phải chuyển sang RTOS Kernel? Richard Barry đúc kết **11 lợi ích kiến trúc vượt trội**:
+
+1. **Trừu tượng hóa thông tin thời gian (Abstracting Timing):** Kernel đảm nhiệm hoàn toàn việc canh thời gian và chuyển ngữ cảnh. Mã nguồn của bạn không cần phải nhồi nhét các biến đếm `millis()` hay cờ ngắt phức tạp.
+2. **Tính mô-đun hóa cao (Modularity):** Mỗi Task là một thực thể độc lập thực hiện đúng một nhiệm vụ duy nhất (Single Responsibility Principle).
+3. **Đơn giản hóa việc bảo trì và mở rộng:** Thêm một tính năng mới (ví dụ thêm kết nối BLE) chỉ đơn giản là tạo thêm một Task mới với độ ưu tiên thích hợp mà không làm xáo trộn thời gian chạy của các hàm cũ.
+4. **Đơn giản hóa thiết kế Device Driver:** Cho phép driver rơi vào trạng thái ngủ (Sleep/Blocked) để chờ truyền nhận DMA/ngắt thay vì phải viết các máy trạng thái phức tạp lồng nhau.
+5. **Phân bổ tài nguyên công bằng & Tất định:** Hệ thống ưu tiên (Priority-based) đảm bảo các sự kiện khẩn cấp luôn được phục vụ ngay lập tức.
+6. **Loại bỏ hiện tượng Polling lãng phí:** Thay vì CPU phải chạy 100% công suất trong vòng lặp kiểm tra cờ, Task tự động nhường CPU cho các tác vụ khác khi chờ dữ liệu.
+7. **Tối ưu hóa điện năng tiêu thụ (Power Management):** Khi không có task nào cần chạy, Kernel tự động kích hoạt **Idle Task** để đưa vi điều khiển vào chế độ Sleep (`__WFI()`) hoặc Tick-less Idle.
+8. **Kiến trúc hướng sự kiện (Event-Driven):** Kernel cung cấp các cơ chế đồng bộ chuẩn mực (Queue, Semaphore, Event Groups, Task Notifications) giúp các luồng giao tiếp an toàn.
+9. **Dễ dàng chia việc trong nhóm (Team Collaboration):** Các kỹ sư có thể làm việc song song trên từng Task độc lập, chỉ cần thống nhất với nhau giao diện truyền tin qua Queue.
+10. **Tái sử dụng mã nguồn (Code Reusability):** Code viết trên FreeRTOS API có thể mang sang chạy trên STM32, ESP32, NXP, TI hoặc thậm chí Windows Simulator mà không cần sửa logic.
+11. **Tính tất định đã được kiểm chứng (Proven Determinism):** Kernel FreeRTOS đã được kiểm thử hàng chục năm trên hàng trăm triệu thiết bị công nghiệp và y tế toàn cầu.
+
+---
+
 ## <span style="color:#e67e22">2. Phạm vi yêu cầu thời gian (Timing Requirements)</span> ^sec-2
 <a id="sec-2"></a><a id="^sec-2"></a>
 
@@ -1160,6 +1179,49 @@ Ví dụ:
 4. **Features (Tính năng):** `configUSE_MUTEXES`, `configUSE_COUNTING_SEMAPHORES`, `configUSE_TIMERS`
 5. **Debug (Kiểm lỗi):** `configCHECK_FOR_STACK_OVERFLOW`, `configUSE_TRACE_FACILITY`
 6. **API Inclusion (Bật/tắt API):** `INCLUDE_vTaskDelete`, `INCLUDE_vTaskDelay`, v.v.
+
+---
+
+### <span style="color:#1abc9c">11.6 Thư mục Demo & Hai Phương pháp Khởi tạo Dự án FreeRTOS</span>
+📗 *Nguồn: Mastering the FreeRTOS Real Time Kernel — Richard Barry (Sections 1.3 & 1.4)*
+
+#### 1. Cấu trúc thư mục `FreeRTOS/Demo`
+Gói tải về của FreeRTOS chứa thư mục `Demo/` gồm hàng trăm dự án mẫu đã được cấu hình sẵn cho từng dòng chip và trình biên dịch:
+* `FreeRTOS/Demo/[Vi_xu_ly]_[Trinh_bien_dich]/`: Chứa project file (IAR, Keil, Eclipse, STM32CubeIDE).
+* `FreeRTOS/Demo/Common/Minimal/`: Chứa các bộ kiểm thử chuẩn của kernel (`BlockQ.c`, `PollQ.c`, `death.c`...) dùng để xác thực hệ thống hoạt động ổn định.
+
+#### 2. Hai phương pháp khởi tạo một dự án FreeRTOS mới
+
+```mermaid
+graph TD
+    START["Khởi tạo dự án FreeRTOS"] --> M1["Cách 1: Phỏng biến từ Demo có sẵn<br/>(Adapting an Existing Demo)<br/>⭐ KHUYẾN NGHỊ"]
+    START --> M2["Cách 2: Tạo mới hoàn toàn từ đầu<br/>(Creating from Scratch)"]
+    
+    M1 --> M1_DESC["• Chọn project Demo gần nhất với phần cứng<br/>• Xóa các task demo mẫu trong main()<br/>• Giữ nguyên compiler flags, startup code, linker script và FreeRTOSConfig.h"]
+    M2 --> M2_DESC["• Thêm 3 file core: tasks.c, list.c, queue.c<br/>• Thêm port.c và portmacro.h đúng dòng MCU<br/>• Thêm 1 file heap (thường là heap_4.c)<br/>• Cấu hình 3 Include Paths bắt buộc<br/>• Tạo file FreeRTOSConfig.h"]
+```
+
+#### 3. Ba đường dẫn Include Path bắt buộc khi build từ đầu:
+Nếu chọn cách tự tạo từ đầu, trình biên dịch (GCC/IAR/Keil) bắt buộc phải trỏ đến 3 thư mục:
+1. `FreeRTOS/Source/include`: Header files dùng chung của kernel (`FreeRTOS.h`, `task.h`, `queue.h`...).
+2. `FreeRTOS/Source/portable/[Compiler]/[Architecture]`: Header tầng phần cứng (`portmacro.h`).
+3. Thư mục project của bạn chứa file `FreeRTOSConfig.h`.
+
+---
+
+### <span style="color:#1abc9c">11.7 Các Kiểu Dữ liệu Cổ điển và Tương thích Ngược (Legacy Types)</span>
+📗 *Nguồn: Mastering the FreeRTOS Real Time Kernel — Richard Barry (Section 1.5)*
+
+Trong các tài liệu hoặc mã nguồn FreeRTOS phiên bản cũ (trước V8.0.0), bạn sẽ bắt gặp các kiểu dữ liệu lịch sử. Kernel hiện đại vẫn định nghĩa chúng thông qua `typedef` để đảm bảo tương thích ngược:
+
+| Kiểu cổ điển (Legacy) | Kiểu hiện đại chuẩn | Ý nghĩa & Quy chuẩn |
+| :--- | :--- | :--- |
+| `portBASE_TYPE` | `BaseType_t` | Kiểu số nguyên có dấu hiệu năng cao nhất của kiến trúc (32-bit `long` trên Cortex-M). |
+| `unsigned portBASE_TYPE` | `UBaseType_t` | Kiểu số nguyên không dấu hiệu năng cao nhất (`uint32_t` trên Cortex-M). |
+| `portTickType` | `TickType_t` | Biến đếm nhịp SysTick (16-bit hoặc 32-bit tùy thuộc `configUSE_16_BIT_TICKS`). |
+| `portCHAR` | `char` | Ký tự 8-bit. |
+| `portSHORT` | `int16_t` | Số nguyên 16-bit. |
+| `portLONG` | `int32_t` | Số nguyên 32-bit. |
 
 ---
 
