@@ -84,7 +84,12 @@ Mỗi bài tập trong bộ đề không đơn thuần là chớp tắt LED vô 
 | **Bài 07** | Task Notifications & IPC | 5 Chế độ eNotifyAction, Thay thế Semaphore/EventGroup, Async Peripheral Driver | [`Bai_07_Task_Notifications_IPC_Exercises.md`](./Module_02_IPC_Signaling_DataProtection/Bai_07_Task_Notifications_IPC_Exercises.md) | [`Bai_07_Task_Notifications_IPC`](./Bai_lam/Module_02_IPC_Signaling_DataProtection/Bai_07_Task_Notifications_IPC/) |
 
 ### 🔌 Module 03: Tương Tác Phần Cứng & ISR Drivers (Hardware & Peripherals)
-*Chương 08 (Selecting MCU), Chương 09 (Drivers & ISRs, NVIC gotchas), Chương 10 (Sharing Peripherals), Chương 11 (Well-Abstracted Architecture)*.
+| Bài Tập | Tên Chuyên Đề | Trọng Tâm Phỏng Vấn & Thực Chiến | Đề Bài Chi Tiết | Thư Mục Bài Làm |
+| :---: | :--- | :--- | :--- | :--- |
+| **Bài 08** | Selecting MCU & Hardware Considerations | RAM/Flash Budgeting, DMA Matrix Conflict, L1 Cache Coherency (Cortex-M7), MPU Non-cacheable | [`Bai_08_Selecting_MCU_Hardware_Exercises.md`](./Module_03_Hardware_Peripherals_ISR_Drivers/Bai_08_Selecting_MCU_Hardware_Exercises.md) | [`Bai_08_Selecting_MCU_Hardware`](./Bai_lam/Module_03_Hardware_Peripherals_ISR_Drivers/Bai_08_Selecting_MCU_Hardware/) |
+| **Bài 09** | Drivers & ISRs Mechanics | NVIC Bit-Shift Trap, Priority Inversion ngắt, `pxHigherPriorityTaskWoken`, Lockless Stream Buffer | [`Bai_09_Drivers_and_ISRs_Exercises.md`](./Module_03_Hardware_Peripherals_ISR_Drivers/Bai_09_Drivers_and_ISRs_Exercises.md) | [`Bai_09_Drivers_and_ISRs`](./Bai_lam/Module_03_Hardware_Peripherals_ISR_Drivers/Bai_09_Drivers_and_ISRs/) |
+| **Bài 10** | Sharing Hardware Peripherals | Atomic Transaction Lock, Multi-Task VCP Mutex + Stream Buffer, Receiver Dispatcher Router | [`Bai_10_Sharing_Hardware_Peripherals_Exercises.md`](./Module_03_Hardware_Peripherals_ISR_Drivers/Bai_10_Sharing_Hardware_Peripherals_Exercises.md) | [`Bai_10_Sharing_Hardware_Peripherals`](./Bai_lam/Module_03_Hardware_Peripherals_ISR_Drivers/Bai_10_Sharing_Hardware_Peripherals/) |
+| **Bài 11** | Well-Abstracted Architecture & HAL | OOP VTable trong C, Self-Contained Task Pattern, Kiến trúc 3 tầng TinyOS TEP101 (HPL-HAL-HIL) | [`Bai_11_Well_Abstracted_Architecture_Exercises.md`](./Module_03_Hardware_Peripherals_ISR_Drivers/Bai_11_Well_Abstracted_Architecture_Exercises.md) | [`Bai_11_Well_Abstracted_Architecture`](./Bai_lam/Module_03_Hardware_Peripherals_ISR_Drivers/Bai_11_Well_Abstracted_Architecture/) |
 
 ### 🏛️ Module 04: Kiến Trúc Phân Tầng, API & Đa Lõi (Architecture, APIs & Multi-Core)
 *Chương 12 (Loose Coupling with Queues), Chương 13 (Choosing RTOS API - CMSIS/POSIX), Chương 14 (Multi-Core Systems - AMP/SMP/OpenAMP)*.
