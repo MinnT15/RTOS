@@ -99,7 +99,12 @@ Mỗi bài tập trong bộ đề không đơn thuần là chớp tắt LED vô 
 | **Bài 14** | Multi-Core Systems (AMP/SMP) | Phần cứng HSEM 32 kênh STM32H7, Shared RAM IPC Ring Buffer, IPI & D-Cache Coherency, SMP Spinlocks | [`Bai_14_Multi_Core_Systems_Exercises.md`](./Module_04_Architecture_APIs_Multicore/Bai_14_Multi_Core_Systems_Exercises.md) | [`Bai_14_Multi_Core_Systems`](./Bai_lam/Module_04_Architecture_APIs_Multicore/Bai_14_Multi_Core_Systems/) |
 
 ### 🛡️ Module 05: Gỡ Lỗi Chuyên Sâu, OTA & Production Ready (Troubleshooting & Production)
-*Chương 15 (Troubleshooting & SystemView), Chương 16 (Watchdog & Middleware), Chương 17 (Bootloader & Dual-Bank OTA), Chương 18 (QA, Unit Test & CI/CD)*.
+| Bài Tập | Tên Chuyên Đề | Trọng Tâm Phỏng Vấn & Thực Chiến | Đề Bài Chi Tiết | Thư Mục Bài Làm |
+| :---: | :--- | :--- | :--- | :--- |
+| **Bài 15** | Developer Support & Troubleshooting | Heisenbug, DWT Cycle Counter, configASSERT, Stack High Watermark (Method 1/2), Run-time Stats, Post-Mortem Crash Dump | [`Bai_15_Developer_Support_Troubleshooting_Exercises.md`](./Module_05_Troubleshooting_Production_OTA/Bai_15_Developer_Support_Troubleshooting_Exercises.md) | [`Bai_15_Developer_Support_Troubleshooting`](./Bai_lam/Module_05_Troubleshooting_Production_OTA/Bai_15_Developer_Support_Troubleshooting/) |
+| **Bài 16** | Watchdog & Reliable Middleware | Multi-Task Watchdog Supervisor, IWDG vs WWDG Early Warning, LittleFS Mutex-Free Gatekeeper, LwIP OOM Guard Drop Policy | [`Bai_16_Watchdog_and_Middleware_Exercises.md`](./Module_05_Troubleshooting_Production_OTA/Bai_16_Watchdog_and_Middleware_Exercises.md) | [`Bai_16_Watchdog_and_Middleware`](./Bai_lam/Module_05_Troubleshooting_Production_OTA/Bai_16_Watchdog_and_Middleware/) |
+| **Bài 17** | Bootloader, Dual-Bank Flash & Secure OTA | Vector Table Relocation (`SCB->VTOR`), Thumb Bit Check, RTOS Safe Reboot to Bootloader, Dual-Bank Ping-Pong Swap, CRC32 Rollback | [`Bai_17_Bootloader_and_OTA_Exercises.md`](./Module_05_Troubleshooting_Production_OTA/Bai_17_Bootloader_and_OTA_Exercises.md) | [`Bai_17_Bootloader_and_OTA`](./Bai_lam/Module_05_Troubleshooting_Production_OTA/Bai_17_Bootloader_and_OTA/) |
+| **Bài 18** | Quality Assurance, Testing & CI/CD | Host-Based Unit Testing & Mock FreeRTOS, MISRA C:2012 Strict Casting, Cppcheck Static Analysis, Automated GitHub Actions Runner | [`Bai_18_QA_Testing_CICD_Exercises.md`](./Module_05_Troubleshooting_Production_OTA/Bai_18_QA_Testing_CICD_Exercises.md) | [`Bai_18_QA_Testing_CICD`](./Bai_lam/Module_05_Troubleshooting_Production_OTA/Bai_18_QA_Testing_CICD/) |
 
 ---
 
@@ -112,3 +117,4 @@ Tất cả các bài tập code đều được thiết kế kèm **Test Harness
 gcc -Wall -Wextra -std=c11 bt_x_x.c -o bt_x_x.exe
 .\bt_x_x.exe
 ```
+
