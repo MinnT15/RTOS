@@ -87,7 +87,7 @@
 | Tổng số file ghi chép | 15 + 1 overview |
 | Tổng kiến thức từ | ~880 trang (2 sách) |
 | File có nội dung 2 sách | 11/15 files |
-| Tổng kích thước notes | ~750 KB markdown |
+| Tổng kích thước notes | ~1.2 MB markdown (1,213 KB) |
 | Giai đoạn học | 4 giai đoạn (Nền tảng → Core → Phần cứng → Senior) |
 
 ---
