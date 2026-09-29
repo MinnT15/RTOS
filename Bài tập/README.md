@@ -92,7 +92,11 @@ Mỗi bài tập trong bộ đề không đơn thuần là chớp tắt LED vô 
 | **Bài 11** | Well-Abstracted Architecture & HAL | OOP VTable trong C, Self-Contained Task Pattern, Kiến trúc 3 tầng TinyOS TEP101 (HPL-HAL-HIL) | [`Bai_11_Well_Abstracted_Architecture_Exercises.md`](./Module_03_Hardware_Peripherals_ISR_Drivers/Bai_11_Well_Abstracted_Architecture_Exercises.md) | [`Bai_11_Well_Abstracted_Architecture`](./Bai_lam/Module_03_Hardware_Peripherals_ISR_Drivers/Bai_11_Well_Abstracted_Architecture/) |
 
 ### 🏛️ Module 04: Kiến Trúc Phân Tầng, API & Đa Lõi (Architecture, APIs & Multi-Core)
-*Chương 12 (Loose Coupling with Queues), Chương 13 (Choosing RTOS API - CMSIS/POSIX), Chương 14 (Multi-Core Systems - AMP/SMP/OpenAMP)*.
+| Bài Tập | Tên Chuyên Đề | Trọng Tâm Phỏng Vấn & Thực Chiến | Đề Bài Chi Tiết | Thư Mục Bài Làm |
+| :---: | :--- | :--- | :--- | :--- |
+| **Bài 12** | Loose Coupling with Queues | Tagged Union, Chuẩn hóa dữ liệu (0-100%), Ownership Handover, Zero-Copy Buffer Pool, Queue Sets | [`Bai_12_Loose_Coupling_with_Queues_Exercises.md`](./Module_04_Architecture_APIs_Multicore/Bai_12_Loose_Coupling_with_Queues_Exercises.md) | [`Bai_12_Loose_Coupling_with_Queues`](./Bai_lam/Module_04_Architecture_APIs_Multicore/Bai_12_Loose_Coupling_with_Queues/) |
+| **Bài 13** | Choosing an RTOS API | Stack Words vs Bytes, Tự động nhận diện ISR IPSR, osStatus_t vs configASSERT, Priority 56 mức, OSAL | [`Bai_13_Choosing_RTOS_API_Exercises.md`](./Module_04_Architecture_APIs_Multicore/Bai_13_Choosing_RTOS_API_Exercises.md) | [`Bai_13_Choosing_RTOS_API`](./Bai_lam/Module_04_Architecture_APIs_Multicore/Bai_13_Choosing_RTOS_API/) |
+| **Bài 14** | Multi-Core Systems (AMP/SMP) | Phần cứng HSEM 32 kênh STM32H7, Shared RAM IPC Ring Buffer, IPI & D-Cache Coherency, SMP Spinlocks | [`Bai_14_Multi_Core_Systems_Exercises.md`](./Module_04_Architecture_APIs_Multicore/Bai_14_Multi_Core_Systems_Exercises.md) | [`Bai_14_Multi_Core_Systems`](./Bai_lam/Module_04_Architecture_APIs_Multicore/Bai_14_Multi_Core_Systems/) |
 
 ### 🛡️ Module 05: Gỡ Lỗi Chuyên Sâu, OTA & Production Ready (Troubleshooting & Production)
 *Chương 15 (Troubleshooting & SystemView), Chương 16 (Watchdog & Middleware), Chương 17 (Bootloader & Dual-Bank OTA), Chương 18 (QA, Unit Test & CI/CD)*.
