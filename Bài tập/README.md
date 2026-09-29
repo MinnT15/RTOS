@@ -77,7 +77,11 @@ Mỗi bài tập trong bộ đề không đơn thuần là chớp tắt LED vô 
 | **Bài 04** | Memory Management & MPU | 5 thuật toán Heap 1-5, Chống phân mảnh, Cấm Dynamic Allocation (MISRA C), MPU | [`Bai_04_Memory_Management_Exercises.md`](./Module_01_Kernel_Core_Fundamentals/Bai_04_Memory_Management_Exercises.md) | [`Bai_04_Memory_Management`](./Bai_lam/Module_01_Kernel_Core_Fundamentals/Bai_04_Memory_Management/) |
 
 ### ⚡ Module 02: Đồng Bộ Hoá & Truyền Thông Liên Tác Vụ (IPC & Data Protection)
-*Chương 05 (Queues & Timers), Chương 06 (Data Protection, Mutex & Priority Inversion), Chương 07 (Direct Task Notifications)*.
+| Bài Tập | Tên Chuyên Đề | Trọng Tâm Phỏng Vấn & Thực Chiến | Đề Bài Chi Tiết | Thư Mục Bài Làm |
+| :---: | :--- | :--- | :--- | :--- |
+| **Bài 05** | Signaling, Queues & Timers | Copy-by-Value, Discriminated Union, Timer Daemon Rules, Event Group Sync | [`Bai_05_Signaling_Queues_Timers_Exercises.md`](./Module_02_IPC_Signaling_DataProtection/Bai_05_Signaling_Queues_Timers_Exercises.md) | [`Bai_05_Signaling_Queues_Timers`](./Bai_lam/Module_02_IPC_Signaling_DataProtection/Bai_05_Signaling_Queues_Timers/) |
+| **Bài 06** | Data Protection, Mutex & Gatekeeper | Priority Inversion & PIP Protocol, Self-Deadlock, Recursive Mutex, Gatekeeper Task | [`Bai_06_Data_Protection_Mutex_Gatekeeper_Exercises.md`](./Module_02_IPC_Signaling_DataProtection/Bai_06_Data_Protection_Mutex_Gatekeeper_Exercises.md) | [`Bai_06_Data_Protection_Mutex_Gatekeeper`](./Bai_lam/Module_02_IPC_Signaling_DataProtection/Bai_06_Data_Protection_Mutex_Gatekeeper/) |
+| **Bài 07** | Task Notifications & IPC | 5 Chế độ eNotifyAction, Thay thế Semaphore/EventGroup, Async Peripheral Driver | [`Bai_07_Task_Notifications_IPC_Exercises.md`](./Module_02_IPC_Signaling_DataProtection/Bai_07_Task_Notifications_IPC_Exercises.md) | [`Bai_07_Task_Notifications_IPC`](./Bai_lam/Module_02_IPC_Signaling_DataProtection/Bai_07_Task_Notifications_IPC/) |
 
 ### 🔌 Module 03: Tương Tác Phần Cứng & ISR Drivers (Hardware & Peripherals)
 *Chương 08 (Selecting MCU), Chương 09 (Drivers & ISRs, NVIC gotchas), Chương 10 (Sharing Peripherals), Chương 11 (Well-Abstracted Architecture)*.
