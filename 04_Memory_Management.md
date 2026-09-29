@@ -25,6 +25,13 @@
 
 ---
 
+> [!IMPORTANT] 💡 **SENIOR ENGINEER NOTE: TỪ BỎ CẤP PHÁT ĐỘNG TRONG PRODUCTION**
+>
+> - **Tiêu chuẩn an toàn (MISRA C / ISO 26262)**: Cảnh báo rằng trong các hệ thống Safety-Critical (Y tế, Ô tô, Hàng không), cấp phát động (`malloc/free` hoặc `heap_4/5`) thường **BỊ CẤM HOÀN TOÀN** do rủi ro phân mảnh (fragmentation) và memory leak chạy lâu ngày.
+> - **Shift to Static Allocation**: Lời khuyên tối thượng cho Production là bật `configSUPPORT_STATIC_ALLOCATION = 1` và sử dụng 100% các hàm Static (`xTaskCreateStatic`, `xQueueCreateStatic`, v.v.). Điều này giúp toàn bộ RAM được cấp phát và quản lý ngay từ Compile-time, đảm bảo tính Deterministic tuyệt đối và không bao giờ gặp lỗi hết RAM khi run-time.
+
+---
+
 ## <span style="color:#e67e22">1. Hiểu về Cấp phát Bộ nhớ — Understanding Memory Allocation</span>
 
 ### <span style="color:#1abc9c">1.1 Static Memory — Bộ nhớ Tĩnh</span>

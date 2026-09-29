@@ -1,4 +1,4 @@
-﻿# <span style="color:#f1c40f">📘 Chapter 2: Understanding RTOS Tasks</span>
+# <span style="color:#f1c40f">📘 Chapter 2: Understanding RTOS Tasks</span>
 ```
  1.  Super Loop là gì?                — Định nghĩa, đặc điểm, code mẫu
  2.  Super Loop trong hệ thống RT     — Jitter, polling, giới hạn của super loop
@@ -1657,6 +1657,16 @@ BaseType_t xTaskCreate( TaskFunction_t pvTaskCode,
 | `pxCreatedTask`| Tuỳ chọn (có thể `NULL`). Lưu Task Handle để sau này thao tác (như xóa, đổi priority). |
 | **Return**    | `pdPASS` nếu tạo thành công, `pdFAIL` (hoặc `errCOULD_NOT_ALLOCATE_REQUIRED_MEMORY`) nếu thiếu Heap. |
 
+> [!IMPORTANT] 💡 **SENIOR ENGINEER NOTE: CHIẾN LƯỢC CHIA TASK (TASK PARTITIONING)**
+> **"Bệnh" lạm dụng Task của Junior:** Người mới học RTOS thường có xu hướng "cứ mỗi ngoại vi/chức năng lại tạo một Task riêng" (VD: Task_LED, Task_Button, Task_Buzzer). Điều này gây lãng phí RAM trầm trọng (vì mỗi Task cần cấp phát Stack riêng) và làm tăng overhead context switch.
+> 
+> **Khi nào NÊN tạo Task mới?**
+> 1. Khi tác vụ có **chu kỳ thực thi khác biệt rõ ràng** (VD: xử lý âm thanh 1kHz vs đọc cảm biến 1Hz).
+> 2. Khi tác vụ cần **chờ (Block) độc lập** vào một sự kiện (VD: đợi UART RX mà không làm ảnh hưởng đến việc nháy LED).
+> 
+> **Khi nào NÊN gộp chung?**
+> Nếu các tác vụ có cùng chu kỳ hoặc liên quan chặt chẽ với nhau, hãy gộp chúng vào **chung 1 Task** và sử dụng **State Machine (FSM)**. Ví dụ: xử lý Button, LED và Buzzer có thể nằm chung trong 1 `vHMITask` chạy định kỳ 10ms. Cách này tiết kiệm hàng KB RAM so với việc tạo 3 Task riêng biệt!
+
 ### <span style="color:#1abc9c">8.2 xTaskCreateStatic() (Tạo Task không cần Heap)</span>
 
 Từ phiên bản FreeRTOS V9.0.0, bạn có thể tạo task **static memory** hoàn toàn không cần cấp phát động (Heap).
@@ -1764,10 +1774,18 @@ Khi phát hiện lỗi, hệ thống sẽ gọi hook function:
 void vApplicationStackOverflowHook( TaskHandle_t *pxTask, signed char *pcTaskName );
 ```
 
-> [!TIP]
-> Có thể dùng hàm `uxTaskGetStackHighWaterMark(xTask)` để xem số lượng byte stack *ít nhất* từng có (nếu = 0 là sắp vỡ stack).
+> [!TIP] 💡 **SENIOR ENGINEER NOTE: STACK SIZING AN TOÀN TRONG THỰC TẾ**
+> **Tuyệt đối không "đoán mò" usStackDepth:** Khai báo quá lớn thì lãng phí RAM, quá nhỏ thì crash hệ thống.
+> 
+> **Quy trình chuẩn R&D để xác định Stack Size:**
+> 1. **Giai đoạn R&D:** Cấp phát một Stack rộng rãi (VD: 512 hoặc 1024 words). Bật macro `INCLUDE_uxTaskGetStackHighWaterMark = 1`.
+> 2. **Stress Test:** Chạy hệ thống với **tải nặng nhất** (ví dụ: kích hoạt tất cả ngắt liên tục, ép sensor gửi dữ liệu tới tấp, gọi tất cả các nhánh if/else sâu nhất trong Task).
+> 3. **Đo đạc:** Định kỳ in ra giá trị của `uxTaskGetStackHighWaterMark(NULL)`. Hàm này trả về **số word còn trống ít nhất** (chưa từng chạm tới) trong Stack kể từ khi Task khởi chạy.
+>    *Ví dụ: Cấp 512 words, High Water Mark trả về là 200.* 
+>    *=> Số word thực tế sử dụng lớn nhất = 512 - 200 = 312 words.*
+> 4. **Bản Production:** Lấy mức sử dụng thực tế (312) cộng thêm **15% đến 20% buffer an toàn**. Vậy `usStackDepth` chốt cho Production sẽ là: `312 * 1.2 = 374` (có thể làm tròn lên 384 hoặc 400).
 
-\n\n## <span style="color:#e67e22">11. So sánh tổng hợp: Super Loop vs RTOS Task</span>
+## <span style="color:#e67e22">11. So sánh tổng hợp: Super Loop vs RTOS Task</span>
 
 ### <span style="color:#1abc9c">Bảng ưu/nhược điểm:</span>
 

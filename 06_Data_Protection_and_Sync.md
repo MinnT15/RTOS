@@ -985,6 +985,10 @@ void vFairResourceTask( void *pvParameters )
 * **Loại bỏ 100% nguy cơ Priority Inversion:** Không có task ưu tiên thấp nào giữ khóa của task ưu tiên cao.
 * **Cực kỳ thân thiện với ngắt phần cứng (ISR-Safe):** Các hàm ngắt ISR không thể Take Mutex, nhưng ISR có thể thoải mái gửi dữ liệu vào Queue của Gatekeeper thông qua `xQueueSendToBackFromISR()`!
 
+> [!IMPORTANT] 💡 **SENIOR ENGINEER NOTE: THIẾT KẾ KHÔNG MUTEX (MUTEX-FREE DESIGN)**
+> - **Hạn chế tối đa Mutex trong kiến trúc hiện đại**: Nếu thiết kế hệ thống mà phải tính toán quá nhiều về Deadlock và Priority Inversion do dùng nhiều Mutex lồng nhau, thì đó là dấu hiệu của kiến trúc tồi (Bad Architecture).
+> - **Khuyên dùng Event-Driven & Gatekeeper**: Khuyên dùng triệt để mô hình Gatekeeper Task (chỉ 1 task sở hữu phần cứng/tài nguyên, các task khác muốn ghi/đọc phải gửi qua Queue). Việc này giúp "giết chết" 100% rủi ro Deadlock và Priority Inversion từ trong trứng nước, đồng thời dễ debug hơn nhiều.
+
 #### Thực Nghiệm 21: Gatekeeper UART Kết Hợp Cả Task Và Tick Hook ISR
 
 ```c
