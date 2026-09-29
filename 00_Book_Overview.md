@@ -50,7 +50,7 @@
 ├── 09_Drivers_and_ISRs.md ............... Driver & Ngắt                📘📗
 │   └── 6 kiến trúc driver, FromISR API, NVIC priority, DMA
 │
-├── 10_Sharing_Hardware_Peripherals.md ... Chia sẻ ngoại vi            📘
+├── 10_Sharing_Hardware_Peripherals.md ... Chia sẻ ngoại vi            📘📗
 │   └── Mutex wrapper, Dispatcher Task, Atomic Transactions
 │
 │  ══════════════════════════════════════════════════════════════
@@ -86,7 +86,7 @@
 |---|---|
 | Tổng số file ghi chép | 15 + 1 overview |
 | Tổng kiến thức từ | ~880 trang (2 sách) |
-| File có nội dung 2 sách | 9/15 files |
+| File có nội dung 2 sách | 10/15 files |
 | Tổng kích thước notes | ~750 KB markdown |
 | Giai đoạn học | 4 giai đoạn (Nền tảng → Core → Phần cứng → Senior) |
 
