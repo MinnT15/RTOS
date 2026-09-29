@@ -67,7 +67,7 @@
 │   └── Native FreeRTOS vs CMSIS-RTOS v2 vs POSIX
 │
 ├── 14_Multi_Core_Systems.md ............. Hệ thống đa lõi             📘
-│   └── AMP vs SMP, IPC phần cứng/mềm, OpenAMP
+│   └── AMP vs SMP, OpenAMP, RPMsg, HSEM, Shared SRAM, Cache Coherency
 │
 └── 15_Troubleshooting_and_Debug.md ...... Xử lý sự cố & Debug         📘📗
     └── configASSERT, Runtime Stats, 7 lỗi phổ biến, Ozone
