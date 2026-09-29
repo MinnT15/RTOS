@@ -60,8 +60,8 @@
 ├── 11_Well_Abstracted_Architecture.md ... Kiến trúc trừu tượng        📘
 │   └── 4-layer driver, Interface OOP trong C, Mock testing
 │
-├── 12_Loose_Coupling_with_Queues.md ..... Liên kết lỏng               📘
-│   └── Command Queue, Protocol Decoder, Multi-source
+├── 12_Loose_Coupling_with_Queues.md ..... Liên kết lỏng               📘📗
+│   └── Command Queue, Protocol Decoder, Multi-source, Mailbox, Queue Sets
 │
 ├── 13_Choosing_RTOS_API.md .............. Chọn API cho RTOS            📘
 │   └── Native FreeRTOS vs CMSIS-RTOS v2 vs POSIX
@@ -86,7 +86,7 @@
 |---|---|
 | Tổng số file ghi chép | 15 + 1 overview |
 | Tổng kiến thức từ | ~880 trang (2 sách) |
-| File có nội dung 2 sách | 10/15 files |
+| File có nội dung 2 sách | 11/15 files |
 | Tổng kích thước notes | ~750 KB markdown |
 | Giai đoạn học | 4 giai đoạn (Nền tảng → Core → Phần cứng → Senior) |
 
