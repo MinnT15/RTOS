@@ -424,7 +424,13 @@ Học viên làm bài trực tiếp trong thư mục `Bai_lam/Module_05_Troubles
 <details>
 <summary><b>👉 Xem mã nguồn tham khảo &amp; Giải pháp (Solution)</b></summary>
 
+#### 💻 Mã Nguồn Hoàn Chỉnh (`bt_18_1_host_unity_mock_freertos.c`)
 ```c
+/**
+ * @file bt_18_1_host_unity_mock_freertos.c
+ * @brief Khung kiểm thử đơn vị Host-Based & Lớp Mock FreeRTOS API (Embedded TDD).
+ */
+
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -434,11 +440,120 @@ Học viên làm bài trực tiếp trong thư mục `Bai_lam/Module_05_Troubles
 #define pdPASS          (1)
 #define errQUEUE_FULL   (0)
 
+typedef int32_t BaseType_t;
+typedef void   *QueueHandle_t;
+
 typedef struct {
     uint32_t sensorId;
-    int32_t rawValue;
-    uint32_t timestamp;
-} SensorPacket_t;
+    int32_t  temperatureDegC;
+    uint32_t timestampMs;
+} SensorTelemetryPacket_t;
+
+/* =========================================================================
+ * LỚP MOCK SPY CHO FREERTOS QUEUE (Chạy 100% trên PC không cần STM32)
+ * ========================================================================= */
+static uint32_t g_mockQueueSendCallCount = 0U;
+static BaseType_t g_mockQueueSendReturnVal = pdPASS;
+static SensorTelemetryPacket_t g_mockLastCapturedPacket;
+
+void Mock_FreeRTOS_Reset(void) {
+    g_mockQueueSendCallCount = 0U;
+    g_mockQueueSendReturnVal = pdPASS;
+    memset(&g_mockLastCapturedPacket, 0, sizeof(SensorTelemetryPacket_t));
+}
+
+void Mock_SetQueueSendReturn(BaseType_t returnVal) {
+    g_mockQueueSendReturnVal = returnVal;
+}
+
+BaseType_t Mock_xQueueSend(QueueHandle_t xQueue, const void *pvItemToQueue, uint32_t xTicksToWait) {
+    (void)xQueue;
+    (void)xTicksToWait;
+    g_mockQueueSendCallCount++;
+    if (pvItemToQueue != NULL) {
+        memcpy(&g_mockLastCapturedPacket, pvItemToQueue, sizeof(SensorTelemetryPacket_t));
+    }
+    return g_mockQueueSendReturnVal;
+}
+
+/* =========================================================================
+ * PRODUCTION BUSINESS LOGIC CẦN KIỂM THỬ
+ * ========================================================================= */
+typedef enum {
+    SENSOR_OK = 0,
+    SENSOR_ERR_SPIKE_FILTERED,
+    SENSOR_ERR_QUEUE_SEND_FAILED
+} SensorProcessStatus_t;
+
+/* TODO: [1] Lọc nhiễu [-40..+125C], đóng gói struct & gọi Mock_xQueueSend */
+SensorProcessStatus_t ProcessSensorTelemetry(QueueHandle_t q, uint32_t sensorId, int32_t rawTemp, uint32_t timestamp) {
+    if ((rawTemp < -40) || (rawTemp > 125)) {
+        return SENSOR_ERR_SPIKE_FILTERED;
+    }
+    SensorTelemetryPacket_t pkt = { sensorId, rawTemp, timestamp };
+    BaseType_t res = Mock_xQueueSend(q, &pkt, 10U);
+    if (res != pdPASS) {
+        return SENSOR_ERR_QUEUE_SEND_FAILED;
+    }
+    return SENSOR_OK;
+}
+
+static void Print_MockSpyReport(const char *testName, const char *expect, const char *actual,
+                                int32_t rawTemp, SensorProcessStatus_t status) {
+    const char *stStr = (status == SENSOR_OK) ? "SENSOR_OK" :
+                        (status == SENSOR_ERR_SPIKE_FILTERED) ? "ERR_SPIKE_FILTERED" : "ERR_QUEUE_FAILED";
+    printf("  [PASS] %-34s\n", testName);
+    printf("         Input Temp=%4dC | Return=%-18s | MockCalls=%u | Captured={id=%u, T=%dC, ts=%u}\n",
+           rawTemp, stStr, g_mockQueueSendCallCount,
+           g_mockLastCapturedPacket.sensorId,
+           g_mockLastCapturedPacket.temperatureDegC,
+           g_mockLastCapturedPacket.timestampMs);
+    printf("         Expect: %s  <==>  Actual: %s\n\n", expect, actual);
+}
+
+static void Test_Sensor_Normal_Data_Sent_To_Queue(void) {
+    Mock_FreeRTOS_Reset();
+    QueueHandle_t dummyQueue = (QueueHandle_t)(uintptr_t)0x1234U;
+    SensorProcessStatus_t st = ProcessSensorTelemetry(dummyQueue, 101U, 28, 5000U);
+    assert(st == SENSOR_OK && g_mockQueueSendCallCount == 1U);
+    assert(g_mockLastCapturedPacket.sensorId == 101U && g_mockLastCapturedPacket.temperatureDegC == 28);
+    Print_MockSpyReport("Test_1_Normal_Data_Sent_To_Queue",
+                        "Calls=1, T=28C", "Calls=1, T=28C", 28, st);
+}
+
+static void Test_Sensor_Spike_Filtered_Out(void) {
+    Mock_FreeRTOS_Reset();
+    QueueHandle_t dummyQueue = (QueueHandle_t)(uintptr_t)0x1234U;
+    SensorProcessStatus_t st = ProcessSensorTelemetry(dummyQueue, 102U, 150, 6000U);
+    assert(st == SENSOR_ERR_SPIKE_FILTERED && g_mockQueueSendCallCount == 0U);
+    Print_MockSpyReport("Test_2_Spike_Glitch_Filtered_Out",
+                        "Calls=0 (Rejected)", "Calls=0 (Rejected)", 150, st);
+}
+
+static void Test_Sensor_Queue_Full_Handled_Safely(void) {
+    Mock_FreeRTOS_Reset();
+    Mock_SetQueueSendReturn(errQUEUE_FULL);
+    QueueHandle_t dummyQueue = (QueueHandle_t)(uintptr_t)0x1234U;
+    SensorProcessStatus_t st = ProcessSensorTelemetry(dummyQueue, 103U, 35, 7000U);
+    assert(st == SENSOR_ERR_QUEUE_SEND_FAILED && g_mockQueueSendCallCount == 1U);
+    Print_MockSpyReport("Test_3_Injected_errQUEUE_FULL_Trap",
+                        "ERR_QUEUE_FAILED", "ERR_QUEUE_FAILED", 35, st);
+}
+
+int main(void) {
+    printf("================================================================================\n");
+    printf("   BÀI TẬP 18.1: HOST-BASED EMBEDDED TDD & MOCK SPY FREERTOS QUEUE API          \n");
+    printf("================================================================================\n");
+    printf("Lưu ý: Chạy trực tiếp trên Linux/PC GCC bằng CMock/Unity Spy mà không cần MCU!\n\n");
+
+    Test_Sensor_Normal_Data_Sent_To_Queue();
+    Test_Sensor_Spike_Filtered_Out();
+    Test_Sensor_Queue_Full_Handled_Safely();
+
+    printf("  [TỔNG KẾT UNITY SUITE]: 3 Tests | 0 Failures | 0 Ignored\n\n");
+    printf(">>> [TEST PASSED] bt_18_1_host_unity_mock_freertos completed successfully.\n");
+    return 0;
+}
 ```
 </details>
 
@@ -458,7 +573,13 @@ typedef struct {
 <details>
 <summary><b>👉 Xem mã nguồn tham khảo &amp; Giải pháp (Solution)</b></summary>
 
+#### 💻 Mã Nguồn Hoàn Chỉnh (`bt_18_2_misra_c_strict_casting_checker.c`)
 ```c
+/**
+ * @file bt_18_2_misra_c_strict_casting_checker.c
+ * @brief Bộ phân tích tĩnh MISRA C:2012 Rule 10.3/10.4 & Giải phẫu biểu diễn nhị phân Bù 2.
+ */
+
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -475,10 +596,90 @@ typedef enum {
 } EssentialType_t;
 
 typedef enum {
-    MISRA_OK = 0,
-    MISRA_ERR_SIGN_CONVERSION,
-    MISRA_ERR_OVERFLOW_TRUNCATION
-} MisraResult_t;
+    MISRA_ASSIGNMENT_OK = 0,
+    MISRA_ERR_NEGATIVE_TO_UNSIGNED,
+    MISRA_ERR_OVERFLOW_UPPER_BOUND,
+    MISRA_ERR_UNDERFLOW_LOWER_BOUND
+} MisraCheckResult_t;
+
+typedef struct {
+    int64_t     minVal;
+    int64_t     maxVal;
+    uint8_t     bitWidth;
+    bool        isSigned;
+    const char *typeName;
+} TypeLimits_t;
+
+static const TypeLimits_t g_typeLimitsTable[] = {
+    [TYPE_UINT8]  = { 0,             255,          8U,  false, "uint8_t"  },
+    [TYPE_INT8]   = { -128,          127,          8U,  true,  "int8_t"   },
+    [TYPE_UINT16] = { 0,             65535,        16U, false, "uint16_t" },
+    [TYPE_INT16]  = { -32768,        32767,        16U, true,  "int16_t"  },
+    [TYPE_UINT32] = { 0,             4294967295LL, 32U, false, "uint32_t" },
+    [TYPE_INT32]  = { -2147483648LL, 2147483647LL, 32U, true,  "int32_t"  }
+};
+
+/* TODO: [1] Kiểm định quy tắc MISRA C Essential Type Model (Rule 10.3 / 10.4) */
+MisraCheckResult_t Check_MISRA_Assignment_Safety(EssentialType_t targetType, int64_t sourceValue) {
+    if ((int)targetType < 0 || targetType > TYPE_INT32) {
+        return MISRA_ERR_OVERFLOW_UPPER_BOUND;
+    }
+    const TypeLimits_t *target = &g_typeLimitsTable[targetType];
+
+    if (!target->isSigned && (sourceValue < 0)) {
+        return MISRA_ERR_NEGATIVE_TO_UNSIGNED;
+    }
+    if (sourceValue > target->maxVal) {
+        return MISRA_ERR_OVERFLOW_UPPER_BOUND;
+    }
+    if (sourceValue < target->minVal) {
+        return MISRA_ERR_UNDERFLOW_LOWER_BOUND;
+    }
+    return MISRA_ASSIGNMENT_OK;
+}
+
+static void Inspect_Assignment(const char *expr, EssentialType_t targetType, int64_t sourceVal, MisraCheckResult_t expected) {
+    MisraCheckResult_t res = Check_MISRA_Assignment_Safety(targetType, sourceVal);
+    assert(res == expected);
+    const TypeLimits_t *t = &g_typeLimitsTable[targetType];
+
+    const char *verdict = (res == MISRA_ASSIGNMENT_OK) ? "COMPLIANT" :
+                          (res == MISRA_ERR_NEGATIVE_TO_UNSIGNED) ? "VIOLATION (Sign Conv)" :
+                          (res == MISRA_ERR_OVERFLOW_UPPER_BOUND) ? "VIOLATION (Overflow!)" : "VIOLATION (Underflow!)";
+
+    int64_t wrappedVal = sourceVal;
+    if (t->bitWidth == 16U) {
+        uint16_t raw16 = (uint16_t)(int16_t)sourceVal;
+        wrappedVal = t->isSigned ? (int64_t)(int16_t)raw16 : (int64_t)raw16;
+    } else if (t->bitWidth == 8U) {
+        uint8_t raw8 = (uint8_t)(int8_t)sourceVal;
+        wrappedVal = t->isSigned ? (int64_t)(int8_t)raw8 : (int64_t)raw8;
+    }
+
+    printf("  %-26s | Range:[%lld..%lld] | %-22s | Runtime bit-wrap=%lld\n",
+           expr, (long long)t->minVal, (long long)t->maxVal, verdict, (long long)wrappedVal);
+}
+
+int main(void) {
+    printf("================================================================================\n");
+    printf("   BÀI TẬP 18.2: BỘ PHÂN TÍCH TĨNH MISRA C:2012 STRICT TYPE CHECKING            \n");
+    printf("================================================================================\n");
+    printf("Ví dụ kinh điển: `uint16_t x = 50000; int16_t y = x;` -> 50000 = 0xC350 (MSB=1)\n");
+    printf("                 Khi đọc dưới dạng int16_t Bù 2 sẽ biến thành -15536 (THẢM HỌA!)\n\n");
+
+    printf("  Biểu thức gán C            | Miền hợp lệ Target      | Kết quả MISRA          | Giá trị thật nếu C ép ngầm\n");
+    printf("  -----------------------------------------------------------------------------------------------------\n");
+    Inspect_Assignment("uint8_t  a = 200;",    TYPE_UINT8,  200,     MISRA_ASSIGNMENT_OK);
+    Inspect_Assignment("int8_t   b = -50;",    TYPE_INT8,   -50,     MISRA_ASSIGNMENT_OK);
+    Inspect_Assignment("int16_t  c = 32000;",  TYPE_INT16,  32000,   MISRA_ASSIGNMENT_OK);
+    Inspect_Assignment("uint16_t x = -5;",     TYPE_UINT16, -5,      MISRA_ERR_NEGATIVE_TO_UNSIGNED);
+    Inspect_Assignment("int16_t  y = 50000;",  TYPE_INT16,  50000,   MISRA_ERR_OVERFLOW_UPPER_BOUND);
+    Inspect_Assignment("int8_t   z = -200;",   TYPE_INT8,   -200,    MISRA_ERR_UNDERFLOW_LOWER_BOUND);
+    printf("  -----------------------------------------------------------------------------------------------------\n\n");
+
+    printf(">>> [TEST PASSED] bt_18_2_misra_c_strict_casting_checker completed successfully.\n");
+    return 0;
+}
 ```
 </details>
 
@@ -499,7 +700,13 @@ typedef enum {
 <details>
 <summary><b>👉 Xem mã nguồn tham khảo &amp; Giải pháp (Solution)</b></summary>
 
+#### 💻 Mã Nguồn Hoàn Chỉnh (`bt_18_3_simulated_cicd_pipeline_runner.c`)
 ```c
+/**
+ * @file bt_18_3_simulated_cicd_pipeline_runner.c
+ * @brief Điều phối CI/CD Pipeline tự động (Static Analysis + Unit Test + Linker .map Check).
+ */
+
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -507,8 +714,9 @@ typedef enum {
 #include <assert.h>
 
 typedef enum {
-    STAGE_PASS = 0,
-    STAGE_FAIL = 1
+    STAGE_STATUS_NOT_RUN = 0,
+    STAGE_STATUS_PASS,
+    STAGE_STATUS_FAIL
 } StageStatus_t;
 
 typedef struct {
@@ -519,5 +727,177 @@ typedef struct {
     uint32_t dataBytes;
     uint32_t bssBytes;
 } LinkerMapInfo_t;
+
+typedef struct {
+    const char     *branchName;
+    uint32_t        staticAnalysisViolations;
+    uint32_t        unitTestsPassed;
+    uint32_t        unitTestsTotal;
+    LinkerMapInfo_t memory;
+} ProjectBuildInput_t;
+
+typedef struct {
+    StageStatus_t staticStatus;
+    StageStatus_t testStatus;
+    StageStatus_t memoryStatus;
+    StageStatus_t packageStatus;
+    bool          pipelinePassed;
+    uint32_t      flashUsedBytes;
+    uint32_t      ramUsedBytes;
+    double        flashUsagePercent;
+    double        ramUsagePercent;
+} CIPipelineResult_t;
+
+StageStatus_t Stage_Static_Analysis(uint32_t violations) {
+    return (violations == 0U) ? STAGE_STATUS_PASS : STAGE_STATUS_FAIL;
+}
+
+StageStatus_t Stage_Unit_Tests(uint32_t passed, uint32_t total) {
+    if ((total == 0U) || (passed < total)) {
+        return STAGE_STATUS_FAIL;
+    }
+    return STAGE_STATUS_PASS;
+}
+
+/* TODO: [1] Tính toán Flash (.text + .rodata + .data) & RAM (.data + .bss) so với ngân sách MCU */
+StageStatus_t Stage_Memory_Footprint_Check(const LinkerMapInfo_t *map,
+                                           uint32_t *outFlashB, uint32_t *outRamB,
+                                           double *outFlashPct, double *outRamPct) {
+    if ((map == NULL) || (outFlashB == NULL) || (outRamB == NULL) ||
+        (outFlashPct == NULL) || (outRamPct == NULL)) {
+        return STAGE_STATUS_FAIL;
+    }
+
+    uint32_t flashUsed = map->textBytes + map->rodataBytes + map->dataBytes;
+    uint32_t ramUsed   = map->dataBytes + map->bssBytes;
+
+    *outFlashB   = flashUsed;
+    *outRamB     = ramUsed;
+    *outFlashPct = ((double)flashUsed / (double)map->maxFlashBytes) * 100.0;
+    *outRamPct   = ((double)ramUsed   / (double)map->maxRamBytes)   * 100.0;
+
+    if ((flashUsed > map->maxFlashBytes) || (ramUsed > map->maxRamBytes)) {
+        return STAGE_STATUS_FAIL;
+    }
+    return STAGE_STATUS_PASS;
+}
+
+StageStatus_t Stage_Package_Firmware(void) {
+    return STAGE_STATUS_PASS;
+}
+
+/* TODO: [2] Điều phối 4 Stage theo nguyên lý Fail-Fast của GitHub Actions */
+CIPipelineResult_t Run_Full_CI_Pipeline(const ProjectBuildInput_t *input) {
+    CIPipelineResult_t res;
+    memset(&res, 0, sizeof(CIPipelineResult_t));
+    res.pipelinePassed = false;
+
+    res.staticStatus = Stage_Static_Analysis(input->staticAnalysisViolations);
+    if (res.staticStatus != STAGE_STATUS_PASS) {
+        return res;
+    }
+
+    res.testStatus = Stage_Unit_Tests(input->unitTestsPassed, input->unitTestsTotal);
+    if (res.testStatus != STAGE_STATUS_PASS) {
+        return res;
+    }
+
+    res.memoryStatus = Stage_Memory_Footprint_Check(&input->memory,
+                                                    &res.flashUsedBytes, &res.ramUsedBytes,
+                                                    &res.flashUsagePercent, &res.ramUsagePercent);
+    if (res.memoryStatus != STAGE_STATUS_PASS) {
+        return res;
+    }
+
+    res.packageStatus = Stage_Package_Firmware();
+    if (res.packageStatus == STAGE_STATUS_PASS) {
+        res.pipelinePassed = true;
+    }
+    return res;
+}
+
+static const char *prvStStr(StageStatus_t st) {
+    if (st == STAGE_STATUS_PASS) { return "PASS   "; }
+    if (st == STAGE_STATUS_FAIL) { return "FAIL!! "; }
+    return "SKIPPED";
+}
+
+static void Print_CIPipelineSummary(const ProjectBuildInput_t *in, const CIPipelineResult_t *r) {
+    printf("  [PR Branch: %-22s] => VERDICT: %s\n",
+           in->branchName, r->pipelinePassed ? "GREEN (READY TO MERGE)" : "BLOCKED BY CI GATE!");
+    printf("    Stage 1 (Cppcheck / MISRA C)   : [%s] (Violations=%u)\n",
+           prvStStr(r->staticStatus), in->staticAnalysisViolations);
+    printf("    Stage 2 (Unity/Ceedling Host)  : [%s] (%u/%u tests)\n",
+           prvStStr(r->testStatus), in->unitTestsPassed, in->unitTestsTotal);
+    printf("    Stage 3 (Linker .map Footprint): [%s] ", prvStStr(r->memoryStatus));
+    if (r->memoryStatus != STAGE_STATUS_NOT_RUN) {
+        printf("Flash=%uKB/%uKB (%.1f%%) | RAM=%uKB/%uKB (%.1f%%)\n",
+               r->flashUsedBytes / 1024U, in->memory.maxFlashBytes / 1024U, r->flashUsagePercent,
+               r->ramUsedBytes / 1024U,   in->memory.maxRamBytes / 1024U,   r->ramUsagePercent);
+    } else {
+        printf("(Không chạy do Fail-Fast ở Stage trước)\n");
+    }
+    printf("    Stage 4 (Release .bin/.elf)    : [%s]\n\n", prvStStr(r->packageStatus));
+}
+
+int main(void) {
+    printf("================================================================================\n");
+    printf("   BÀI TẬP 18.3: BỘ ĐIỀU PHỐI GITHUB ACTIONS CI/CD PIPELINE (FAIL-FAST GATE)    \n");
+    printf("================================================================================\n");
+    printf("Công thức Linker Map:\n");
+    printf("  - Flash = .text + .rodata + .data  |  RAM = .data + .bss (+ Stack/Heap)\n\n");
+
+    ProjectBuildInput_t goodProject = {
+        "feat/motor-pid-v2",
+        0U, 45U, 45U,
+        { 512U * 1024U, 128U * 1024U, 180U * 1024U, 30U * 1024U, 10U * 1024U, 50U * 1024U }
+    };
+    CIPipelineResult_t r1 = Run_Full_CI_Pipeline(&goodProject);
+    Print_CIPipelineSummary(&goodProject, &r1);
+    assert(r1.pipelinePassed == true && r1.flashUsedBytes == 220U * 1024U && r1.ramUsedBytes == 60U * 1024U);
+
+    ProjectBuildInput_t badRamProject = goodProject;
+    badRamProject.branchName = "fix/huge-static-buf";
+    badRamProject.memory.bssBytes = 150U * 1024U;
+    CIPipelineResult_t r2 = Run_Full_CI_Pipeline(&badRamProject);
+    Print_CIPipelineSummary(&badRamProject, &r2);
+    assert(!r2.pipelinePassed && r2.memoryStatus == STAGE_STATUS_FAIL && r2.packageStatus == STAGE_STATUS_NOT_RUN);
+
+    ProjectBuildInput_t badLintProject = goodProject;
+    badLintProject.branchName = "wip/malloc-in-isr";
+    badLintProject.staticAnalysisViolations = 3U;
+    CIPipelineResult_t r3 = Run_Full_CI_Pipeline(&badLintProject);
+    Print_CIPipelineSummary(&badLintProject, &r3);
+    assert(!r3.pipelinePassed && r3.staticStatus == STAGE_STATUS_FAIL && r3.testStatus == STAGE_STATUS_NOT_RUN);
+
+    printf(">>> [TEST PASSED] bt_18_3_simulated_cicd_pipeline_runner completed successfully.\n");
+    return 0;
+}
 ```
 </details>
+
+---
+
+## 🧭 HƯỚNG DẪN BẮT ĐẦU THỰC HÀNH TRÊN LINUX WSL
+1. Làm toàn bộ phần trắc nghiệm & phân tích tình huống trong tài liệu này trước khi viết code.
+2. Từ thư mục gốc `Bài tập/` trên máy ảo Linux WSL Ubuntu, biên dịch và chạy toàn bộ các bài lab của bài học này bằng lệnh:
+   ```bash
+   # Kiểm tra nhanh môi trường (lần đầu)
+   make check-env
+
+   # Biên dịch & chạy chi tiết kèm sơ đồ/bảng log trực quan trên terminal
+   make run-bai18
+
+   # Chạy kèm AddressSanitizer & UBSan để phát hiện lỗi bộ nhớ/UB
+   make MODE=asan run-bai18
+
+   # Hoặc kiểm tra từng bài riêng trong thư mục Bai_lam/Module_05_Troubleshooting_Production_OTA/Bai_18_QA_Testing_CICD
+   cd "Bai_lam/Module_05_Troubleshooting_Production_OTA/Bai_18_QA_Testing_CICD"
+   make run
+   make valgrind
+   ```
+3. Các file mã nguồn cần hoàn thiện:
+   - `bt_18_1_host_unity_mock_freertos.c`
+   - `bt_18_2_misra_c_strict_casting_checker.c`
+   - `bt_18_3_simulated_cicd_pipeline_runner.c`
+4. Đảm bảo toàn bộ các bài đọc log phân tích đầy đủ và kết thúc với dòng `>>> [TEST PASSED]`.

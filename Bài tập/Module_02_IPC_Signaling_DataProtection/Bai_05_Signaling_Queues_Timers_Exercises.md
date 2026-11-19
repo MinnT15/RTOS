@@ -535,3 +535,29 @@ void Mock_Timer_Tick(MockTimer_t *p_timer) {
   2. Viết hàm mô phỏng `Mock_EventGroupSync(uint32_t *p_event_group, uint32_t uxBitsToSet, uint32_t uxBitsToWaitFor)`:
      - Set bit của task gọi hàm vào event group.
      - Kiểm tra nếu tất cả các bit trong `uxBitsToWaitFor` đều đã bằng 1 $\rightarrow$ Đạt điểm hẹn (Rendezvous met), cho phép toàn bộ hệ thống cùng chạy!
+
+---
+
+## 🧭 HƯỚNG DẪN BẮT ĐẦU THỰC HÀNH TRÊN LINUX WSL
+1. Làm toàn bộ phần trắc nghiệm & phân tích tình huống trong tài liệu này trước khi viết code.
+2. Từ thư mục gốc `Bài tập/` trên máy ảo Linux WSL Ubuntu, biên dịch và chạy toàn bộ các bài lab của bài học này bằng lệnh:
+   ```bash
+   # Kiểm tra nhanh môi trường (lần đầu)
+   make check-env
+
+   # Biên dịch & chạy chi tiết kèm sơ đồ/bảng log trực quan trên terminal
+   make run-bai05
+
+   # Chạy kèm AddressSanitizer & UBSan để phát hiện lỗi bộ nhớ/UB
+   make MODE=asan run-bai05
+
+   # Hoặc kiểm tra từng bài riêng trong thư mục Bai_lam/Module_02_IPC_Signaling_DataProtection/Bai_05_Signaling_Queues_Timers
+   cd "Bai_lam/Module_02_IPC_Signaling_DataProtection/Bai_05_Signaling_Queues_Timers"
+   make run
+   make valgrind
+   ```
+3. Các file mã nguồn cần hoàn thiện:
+   - `bt_5_1_queue_copy_by_value.c`
+   - `bt_5_2_software_timer_daemon.c`
+   - `bt_5_3_event_group_rendezvous.c`
+4. Đảm bảo toàn bộ các bài đọc log phân tích đầy đủ và kết thúc với dòng `>>> [TEST PASSED]`.

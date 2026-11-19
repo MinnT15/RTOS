@@ -534,15 +534,26 @@ void SpinLock_Release(SmpSpinLock_t *sl, uint32_t coreId) {
 
 ---
 
-## 🧭 HƯỚNG DẪN BẮT ĐẦU THỰC HÀNH
-1. Mở file [Bai_14_Multi_Core_Systems_Exercises.md](./Bai_14_Multi_Core_Systems_Exercises.md) và tự mình làm toàn bộ 18 câu trắc nghiệm.
-2. Di chuyển vào thư mục code: `cd "Bai_lam/Module_04_Architecture_APIs_Multicore/Bai_14_Multi_Core_Systems"`
-3. Lần lượt hoàn thiện các file:
+## 🧭 HƯỚNG DẪN BẮT ĐẦU THỰC HÀNH TRÊN LINUX WSL
+1. Làm toàn bộ phần trắc nghiệm & phân tích tình huống trong tài liệu này trước khi viết code.
+2. Từ thư mục gốc `Bài tập/` trên máy ảo Linux WSL Ubuntu, biên dịch và chạy toàn bộ các bài lab của bài học này bằng lệnh:
+   ```bash
+   # Kiểm tra nhanh môi trường (lần đầu)
+   make check-env
+
+   # Biên dịch & chạy chi tiết kèm sơ đồ/bảng log trực quan trên terminal
+   make run-bai14
+
+   # Chạy kèm AddressSanitizer & UBSan để phát hiện lỗi bộ nhớ/UB
+   make MODE=asan run-bai14
+
+   # Hoặc kiểm tra từng bài riêng trong thư mục Bai_lam/Module_04_Architecture_APIs_Multicore/Bai_14_Multi_Core_Systems
+   cd "Bai_lam/Module_04_Architecture_APIs_Multicore/Bai_14_Multi_Core_Systems"
+   make run
+   make valgrind
+   ```
+3. Các file mã nguồn cần hoàn thiện:
    - `bt_14_1_hardware_semaphore_hsem.c`
    - `bt_14_2_shared_memory_ring_buffer_ipc.c`
    - `bt_14_3_smp_spin_lock_multi_core.c`
-4. Biên dịch và kiểm tra tính đúng đắn với GCC:
-   ```powershell
-   gcc -Wall -Wextra -std=c11 bt_14_1_hardware_semaphore_hsem.c -o test.exe; .\test.exe
-   ```
-5. Đảm bảo toàn bộ test case đều hiển thị `>>> [TEST PASSED]`.
+4. Đảm bảo toàn bộ các bài đọc log phân tích đầy đủ và kết thúc với dòng `>>> [TEST PASSED]`.

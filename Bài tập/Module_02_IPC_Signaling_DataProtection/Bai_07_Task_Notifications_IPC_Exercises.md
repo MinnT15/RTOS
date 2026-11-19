@@ -484,3 +484,29 @@ bool Mock_TaskNotifyWait(MockTCB_t *p_tcb, uint32_t bits_to_clear_on_exit, uint3
   1. Cấu trúc Driver lưu con trỏ Task đang chờ nhận (`p_waiting_task_tcb`) và byte dữ liệu đệm (`rx_byte`).
   2. Hàm `UART_ReceiveByte(MockTCB_t *p_my_tcb, uint8_t *p_byte_out)`: Lưu con trỏ `p_my_tcb` vào Driver, mô phỏng việc ngủ chờ.
   3. Hàm ngắt `UART_RX_IRQHandler(uint8_t received_hardware_byte)`: Nhận byte, lưu vào Driver và gọi `Mock_TaskNotifyGive(p_waiting_task_tcb)` để đánh thức Task dậy.
+
+---
+
+## 🧭 HƯỚNG DẪN BẮT ĐẦU THỰC HÀNH TRÊN LINUX WSL
+1. Làm toàn bộ phần trắc nghiệm & phân tích tình huống trong tài liệu này trước khi viết code.
+2. Từ thư mục gốc `Bài tập/` trên máy ảo Linux WSL Ubuntu, biên dịch và chạy toàn bộ các bài lab của bài học này bằng lệnh:
+   ```bash
+   # Kiểm tra nhanh môi trường (lần đầu)
+   make check-env
+
+   # Biên dịch & chạy chi tiết kèm sơ đồ/bảng log trực quan trên terminal
+   make run-bai07
+
+   # Chạy kèm AddressSanitizer & UBSan để phát hiện lỗi bộ nhớ/UB
+   make MODE=asan run-bai07
+
+   # Hoặc kiểm tra từng bài riêng trong thư mục Bai_lam/Module_02_IPC_Signaling_DataProtection/Bai_07_Task_Notifications_IPC
+   cd "Bai_lam/Module_02_IPC_Signaling_DataProtection/Bai_07_Task_Notifications_IPC"
+   make run
+   make valgrind
+   ```
+3. Các file mã nguồn cần hoàn thiện:
+   - `bt_7_1_task_notify_lightweight_sem.c`
+   - `bt_7_2_task_notify_event_bits.c`
+   - `bt_7_3_uart_rx_driver_notify.c`
+4. Đảm bảo toàn bộ các bài đọc log phân tích đầy đủ và kết thúc với dòng `>>> [TEST PASSED]`.

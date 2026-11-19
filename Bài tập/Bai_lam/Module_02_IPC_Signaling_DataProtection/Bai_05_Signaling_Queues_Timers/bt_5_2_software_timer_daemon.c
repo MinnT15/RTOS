@@ -3,20 +3,12 @@
  * KHÓA HỌC: FREERTOS ADVANCED
  * MODULE: Module_02_IPC_Signaling_DataProtection
  * CHUYÊN ĐỀ: Bai_05_Signaling_Queues_Timers
- * BÀI TẬP 5.2: Bộ Đếm Thời Gian Phần Mềm (Software Timer) & Timer ID [⭐⭐⭐]
+ * BÀI TẬP 5.2: Bộ Đếm Thời Gian Phần Mềm (Software Timer Daemon) & Reset [⭐⭐⭐]
  * ============================================================================
  * MỤC TIÊU:
- *   1. Hiểu bản chất hoạt động của Software Timer theo chu kỳ Ticks.
- *   2. Phân biệt Timer One-shot (tự tắt) và Timer Auto-reload.
- *   3. Sử dụng lệnh Timer Reset để làm mới thời gian Timeout (Backlight logic).
- *
- * HƯỚNG DẪN BIÊN DỊCH & CHẠY:
- *   Windows (PowerShell):
- *     gcc -Wall -Wextra -std=c11 bt_5_2_software_timer_daemon.c -o bt_5_2_software_timer_daemon.exe
- *     .\bt_5_2_software_timer_daemon.exe
- *   Linux / macOS:
- *     gcc -Wall -Wextra -std=c11 bt_5_2_software_timer_daemon.c -o bt_5_2_software_timer_daemon
- *     ./bt_5_2_software_timer_daemon
+ *   1. Mô phỏng Timer Service Daemon Task chạy theo từng Tick (1..12).
+ *   2. Phân biệt One-Shot (Backlight tự tắt -> Dormant) vs Auto-Reload (Heartbeat).
+ *   3. Kiểm chứng xTimerReset() khởi động lại thời hạn timeout khi có tương tác nút bấm.
  * ============================================================================
  */
 
@@ -27,6 +19,7 @@
 typedef void (*TimerCallbackFunction_t)(void *pvTimerID);
 
 typedef struct {
+    const char *pcName;
     uint32_t period_ticks;
     uint32_t current_ticks;
     bool is_autoreload;
@@ -35,9 +28,10 @@ typedef struct {
     TimerCallbackFunction_t pxCallback;
 } MockTimer_t;
 
-/* TODO: [1] Cài đặt hàm khởi tạo Mock_Timer_Init() */
-void Mock_Timer_Init(MockTimer_t *p_timer, uint32_t period, bool autoreload, void *p_id, TimerCallbackFunction_t cb) {
+/* TODO: [1] Khởi tạo Software Timer */
+void Mock_Timer_Init(MockTimer_t *p_timer, const char *name, uint32_t period, bool autoreload, void *p_id, TimerCallbackFunction_t cb) {
     if (p_timer != NULL) {
+        p_timer->pcName = name;
         p_timer->period_ticks = period;
         p_timer->current_ticks = 0U;
         p_timer->is_autoreload = autoreload;
@@ -47,7 +41,7 @@ void Mock_Timer_Init(MockTimer_t *p_timer, uint32_t period, bool autoreload, voi
     }
 }
 
-/* TODO: [2] Cài đặt hàm Mock_Timer_Start() và Mock_Timer_Reset() */
+/* TODO: [2] Khởi động / Reset Software Timer */
 void Mock_Timer_Start(MockTimer_t *p_timer) {
     if (p_timer != NULL) {
         p_timer->current_ticks = 0U;
@@ -57,82 +51,93 @@ void Mock_Timer_Start(MockTimer_t *p_timer) {
 
 void Mock_Timer_Reset(MockTimer_t *p_timer) {
     if (p_timer != NULL) {
-        p_timer->current_ticks = 0U; /* Đặt lại mốc tính thời gian */
+        p_timer->current_ticks = 0U;
         p_timer->is_active = true;
     }
 }
 
-/* TODO: [3] Cài đặt hàm xử lý bước nhịp Mock_Timer_Tick() */
-void Mock_Timer_Tick(MockTimer_t *p_timer) {
+/* TODO: [3] Hàm bước nhịp Daemon xử lý hết hạn và gọi Callback */
+bool Mock_Timer_Tick(MockTimer_t *p_timer) {
     if ((p_timer == NULL) || (!p_timer->is_active)) {
-        return;
+        return false;
     }
 
     p_timer->current_ticks++;
     if (p_timer->current_ticks >= p_timer->period_ticks) {
-        /* Kích hoạt callback */
         if (p_timer->pxCallback != NULL) {
             p_timer->pxCallback(p_timer->pvTimerID);
         }
-
         if (p_timer->is_autoreload) {
             p_timer->current_ticks = 0U;
         } else {
-            p_timer->is_active = false; /* One-shot chuyển sang Dormant */
+            p_timer->is_active = false; /* One-shot tự chuyển về DORMANT */
         }
+        return true;
     }
+    return false;
 }
 
 static uint32_t g_backlight_off_count = 0U;
+static uint32_t g_heartbeat_count     = 0U;
 
 static void vBacklightTimerCallback(void *pvTimerID) {
     (void)pvTimerID;
     g_backlight_off_count++;
 }
 
-/* ============================================================================
- * HÀM MAIN: TEST HARNESS TỰ ĐỘNG
- * ============================================================================
- */
+static void vHeartbeatTimerCallback(void *pvTimerID) {
+    (void)pvTimerID;
+    g_heartbeat_count++;
+}
+
 int main(void) {
-    printf("=== BÀI TẬP 5.2: KIỂM CHỨNG SOFTWARE TIMER & CƠ CHẾ RESET TIMEOUT ===\n\n");
+    printf("================================================================================\n");
+    printf("   BÀI TẬP 5.2: MÔ PHỎNG TIMER SERVICE DAEMON — ONE-SHOT RESET vs AUTO-RELOAD   \n");
+    printf("================================================================================\n");
+    printf("Cấu hình:\n");
+    printf("  - Timer 1 (Backlight) : ONE-SHOT    (Period = 5 ticks). Nhấn nút ở Tick 3 -> Reset!\n");
+    printf("  - Timer 2 (Heartbeat) : AUTO-RELOAD (Period = 4 ticks). Tự động lặp vô hạn.\n\n");
 
-    MockTimer_t xBacklightTimer;
-    /* Cấu hình Timer One-shot chu kỳ 5 ticks */
-    Mock_Timer_Init(&xBacklightTimer, 5U, false, NULL, vBacklightTimerCallback);
+    MockTimer_t xBacklightTimer, xHeartbeatTimer;
+    Mock_Timer_Init(&xBacklightTimer, "Backlight", 5U, false, NULL, vBacklightTimerCallback);
+    Mock_Timer_Init(&xHeartbeatTimer, "Heartbeat", 4U, true,  NULL, vHeartbeatTimerCallback);
+
     Mock_Timer_Start(&xBacklightTimer);
+    Mock_Timer_Start(&xHeartbeatTimer);
 
-    /* 1. Cho thời gian chạy 3 ticks (chưa chạm mốc 5 ticks) */
-    for (uint32_t i = 0U; i < 3U; i++) {
-        Mock_Timer_Tick(&xBacklightTimer);
+    printf("  Tick | Sự kiện ngoài | Backlight (Active|Count|Off?) | Heartbeat (Active|Count|Fire?)\n");
+    printf("  ------------------------------------------------------------------------------------\n");
+
+    for (uint32_t tick = 1U; tick <= 12U; tick++) {
+        const char *extEvent = "-";
+        if (tick == 3U) {
+            Mock_Timer_Reset(&xBacklightTimer);
+            extEvent = "xTimerReset()!";
+        }
+        bool bl_fired = Mock_Timer_Tick(&xBacklightTimer);
+        bool hb_fired = Mock_Timer_Tick(&xHeartbeatTimer);
+
+        printf("   %2u  | %-14s|   %-6s  %u/5   %-5s   |    %-6s   %u/4   %-5s\n",
+               tick, extEvent,
+               xBacklightTimer.is_active ? "ACTIVE" : "DORMNT",
+               xBacklightTimer.current_ticks,
+               bl_fired ? "FIRED!" : "no",
+               xHeartbeatTimer.is_active ? "ACTIVE" : "DORMNT",
+               xHeartbeatTimer.current_ticks,
+               hb_fired ? "FIRED!" : "no");
     }
-    printf("[Bước 1] Chạy 3 ticks -> Đèn tắt = %u lần (Kỳ vọng: 0)\n", g_backlight_off_count);
+    printf("  ------------------------------------------------------------------------------------\n\n");
 
-    /* 2. Người dùng nhấn nút -> Kích hoạt Timer Reset (trở về 0 tick) */
-    Mock_Timer_Reset(&xBacklightTimer);
-    printf("[Bước 2] Nhấn nút -> Reset Timer về 0\n");
+    printf("[TỔNG KẾT KIỂM CHỨNG]:\n");
+    printf("  - Backlight (One-shot): Nhấn nút lúc Tick 3 (cộng thêm Tick 3 làm tick=1 mới) -> Nổ ở Tick 7!\n");
+    printf("    Số lần tắt đèn = %u (Kỳ vọng: 1, vì sau đó chuyển sang DORMANT vĩnh viễn)\n", g_backlight_off_count);
+    printf("  - Heartbeat (Auto-reload): Số lần chớp LED ở Tick 4, 8, 12 = %u (Kỳ vọng: 3)\n\n", g_heartbeat_count);
 
-    /* 3. Cho thời gian chạy tiếp 4 ticks -> Vẫn chưa chạm mốc 5 ticks mới */
-    for (uint32_t i = 0U; i < 4U; i++) {
-        Mock_Timer_Tick(&xBacklightTimer);
-    }
-    printf("[Bước 3] Chạy thêm 4 ticks sau Reset -> Đèn tắt = %u lần (Kỳ vọng: 0)\n", g_backlight_off_count);
-
-    /* 4. Cho thời gian chạy tick thứ 5 -> Chạm mốc, callback được kích hoạt, đèn tắt */
-    Mock_Timer_Tick(&xBacklightTimer);
-    printf("[Bước 4] Chạm mốc tick thứ 5 -> Đèn tắt = %u lần (Kỳ vọng: 1)\n", g_backlight_off_count);
-
-    /* 5. Chạy thêm các tick sau -> Do là One-shot, không được kích hoạt lần 2 */
-    for (uint32_t i = 0U; i < 10U; i++) {
-        Mock_Timer_Tick(&xBacklightTimer);
-    }
-    printf("[Bước 5] Chạy thêm 10 ticks sau khi One-shot hết hạn -> Đèn tắt = %u lần (Kỳ vọng: 1)\n\n",
-           g_backlight_off_count);
-
-    if ((g_backlight_off_count == 1U) && (!xBacklightTimer.is_active)) {
-        printf(">>> [TEST PASSED] Cơ chế Software Timer One-shot & Reset hoạt động chuẩn xác 100%%!\n");
+    if ((g_backlight_off_count == 1U) && (!xBacklightTimer.is_active) && (g_heartbeat_count == 3U)) {
+        printf(">>> [TEST PASSED] Software Timer One-Shot Reset & Auto-Reload hoạt động chuẩn 100%%!\n");
     } else {
-        printf(">>> [TEST FAILED] Lỗi logic kích hoạt Software Timer!\n");
+        printf(">>> [TEST FAILED] Lỗi chu kỳ hoặc trạng thái Software Timer!\n");
+        return 1;
     }
 
     return 0;

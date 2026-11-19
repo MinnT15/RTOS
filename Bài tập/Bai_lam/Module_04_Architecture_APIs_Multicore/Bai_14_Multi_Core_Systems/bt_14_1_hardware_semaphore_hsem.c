@@ -147,6 +147,13 @@ int main(void) {
     printf("  - M7 Task 5 khóa kênh 1: %s\n", bLockProc5 ? "THÀNH CÔNG" : "LỖI");
     assert(bLockProc5 == true);
 
+    /* Giải mã giá trị thanh ghi phần cứng HSEM_RLR[1]: [31]=LOCK | [11:8]=COREID | [7:0]=PROCID */
+    uint32_t hsem_rlr_reg = ((hsem.ch[1].bLocked ? 1U : 0U) << 31U) |
+                            ((uint32_t)hsem.ch[1].ucCoreId << 8U) |
+                            ((uint32_t)hsem.ch[1].ucProcessId);
+    printf("  - Thanh ghi phần cứng HSEM_RLR[1] = 0x%08X ([31]LOCK=1 | [11:8]CORE=0x%X(M7) | [7:0]PROC=%u)\n",
+           hsem_rlr_reg, hsem.ch[1].ucCoreId, hsem.ch[1].ucProcessId);
+
     // Task 8 trên Core M7 cố tình giải phóng kênh của Task 5 -> BỊ TỪ CHỐI!
     bool bIllegalRelease = HSEM_Release(&hsem, 1U, CORE_M7, 8U);
     printf("  - M7 Task 8 cố mở khóa của Task 5: %s (Kỳ vọng: TỪ CHỐI)\n", 

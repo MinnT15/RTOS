@@ -409,7 +409,13 @@ Học viên làm bài trực tiếp trong thư mục `Bai_lam/Module_05_Troubles
 <details>
 <summary><b>👉 Xem mã nguồn tham khảo &amp; Giải pháp (Solution)</b></summary>
 
+#### 💻 Mã Nguồn Hoàn Chỉnh (`bt_17_1_vtor_app_vector_jump.c`)
 ```c
+/**
+ * @file bt_17_1_vtor_app_vector_jump.c
+ * @brief Kiểm tra Vector Table ARM Cortex-M, Di dời SCB->VTOR & Nhảy sang RTOS App.
+ */
+
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -417,16 +423,123 @@ Học viên làm bài trực tiếp trong thư mục `Bai_lam/Module_05_Troubles
 #include <assert.h>
 
 #define RAM_START_ADDR      (0x20000000U)
-#define RAM_END_ADDR        (0x20020000U)
+#define RAM_END_ADDR        (0x20020000U) /* 128 KB RAM */
+#define APP_FLASH_START     (0x08020000U)
+#define APP_FLASH_END       (0x08080000U)
 
 typedef enum {
     BOOT_SUCCESS = 0,
     BOOT_ERR_INVALID_MSP,
     BOOT_ERR_INVALID_ENTRY,
-    BOOT_ERR_NOT_THUMB
+    BOOT_ERR_NOT_THUMB,
+    BOOT_ERR_VTOR_ALIGNMENT
 } BootResult_t;
 
-typedef void (*AppEntryFunc_t)(void);
+typedef void (*AppResetHandler_t)(void);
+
+typedef struct {
+    uint32_t VTOR;
+    uint32_t MSP;
+    bool     appExecuted;
+} SimulatedCortexCore_t;
+
+static SimulatedCortexCore_t g_core;
+
+void Core_Reset(void) {
+    memset(&g_core, 0, sizeof(SimulatedCortexCore_t));
+    g_core.VTOR = 0x08000000U;
+    g_core.MSP  = 0x20001000U;
+}
+
+static void Simulated_App_Reset_Handler(void) {
+    g_core.appExecuted = true;
+}
+
+/* TODO: [1] Thẩm định 4 điều kiện Vector Table trước khi nhảy:
+ *       1. Căn chỉnh SCB->VTOR (512 bytes: bit 8..0 == 0).
+ *       2. MSP nằm trong SRAM hợp lệ & căn 4 bytes.
+ *       3. Bit 0 của Reset_Handler (Thumb bit T) PHẢI bằng 1.
+ *       4. Địa chỉ code thực thi nằm trong vùng Flash Application. */
+BootResult_t Validate_App_Vector_Table(uint32_t appBaseAddr, uint32_t initialMsp, uint32_t resetHandlerAddr) {
+    if ((appBaseAddr & 0x1FFU) != 0U) {
+        return BOOT_ERR_VTOR_ALIGNMENT;
+    }
+    if ((initialMsp < RAM_START_ADDR) || (initialMsp > RAM_END_ADDR) || ((initialMsp & 0x03U) != 0U)) {
+        return BOOT_ERR_INVALID_MSP;
+    }
+    if ((resetHandlerAddr & 0x01U) == 0U) {
+        return BOOT_ERR_NOT_THUMB;
+    }
+    uint32_t codeAddr = resetHandlerAddr & (~0x01U);
+    if ((codeAddr < APP_FLASH_START) || (codeAddr >= APP_FLASH_END)) {
+        return BOOT_ERR_INVALID_ENTRY;
+    }
+    return BOOT_SUCCESS;
+}
+
+/* TODO: [2] Di dời SCB->VTOR, __set_MSP() và gọi Reset_Handler() */
+BootResult_t Jump_To_Application(uint32_t appBaseAddr, uint32_t initialMsp, AppResetHandler_t appHandler) {
+    if (appHandler == NULL) {
+        return BOOT_ERR_INVALID_ENTRY;
+    }
+    g_core.VTOR = appBaseAddr;
+    g_core.MSP  = initialMsp;
+    appHandler();
+    return BOOT_SUCCESS;
+}
+
+static const char *prvBootErrName(BootResult_t r) {
+    switch (r) {
+        case BOOT_SUCCESS:            return "BOOT_SUCCESS";
+        case BOOT_ERR_INVALID_MSP:    return "ERR_INVALID_MSP (Out of SRAM!)";
+        case BOOT_ERR_INVALID_ENTRY:  return "ERR_INVALID_ENTRY";
+        case BOOT_ERR_NOT_THUMB:      return "ERR_NOT_THUMB (UsageFault INVSTATE!)";
+        case BOOT_ERR_VTOR_ALIGNMENT: return "ERR_VTOR_ALIGNMENT (Not 512B aligned!)";
+        default:                      return "UNKNOWN";
+    }
+}
+
+int main(void) {
+    printf("================================================================================\n");
+    printf("   BÀI TẬP 17.1: BOOTLOADER VECTOR TABLE RELOCATION (VTOR) & JUMP TO RTOS       \n");
+    printf("================================================================================\n");
+    Core_Reset();
+
+    uint32_t validAppAddr    = 0x08020000U;
+    uint32_t validMsp        = 0x2001FFFCU;
+    uint32_t validHandlerRaw = 0x08020101U; /* Code tại 0x08020100 + Thumb bit 1 */
+
+    printf("[FLASH VECTOR TABLE CỦA ỨNG DỤNG RTOS @ 0x%08X]:\n", validAppAddr);
+    printf("  +0x00 | Initial MSP      : 0x%08X (Nằm trong SRAM 0x20000000..0x20020000)\n", validMsp);
+    printf("  +0x04 | Reset_Handler    : 0x%08X (Bit[0] Thumb T=%u | Code=0x%08X)\n",
+           validHandlerRaw, validHandlerRaw & 1U, validHandlerRaw & ~1U);
+    printf("  Bootloader Initial State : SCB->VTOR=0x%08X | MSP=0x%08X\n\n", g_core.VTOR, g_core.MSP);
+
+    BootResult_t rOk   = Validate_App_Vector_Table(validAppAddr, validMsp, validHandlerRaw);
+    BootResult_t rArm  = Validate_App_Vector_Table(validAppAddr, validMsp, 0x08020100U);
+    BootResult_t rMsp  = Validate_App_Vector_Table(validAppAddr, 0x10000000U, validHandlerRaw);
+    BootResult_t rVtor = Validate_App_Vector_Table(0x08020040U,  validMsp, validHandlerRaw);
+
+    printf("[KIỂM ĐỊNH CÁC BẪY KHỞI ĐỘNG]:\n");
+    printf("  1. Vector chuẩn RTOS App        -> %s\n", prvBootErrName(rOk));
+    printf("  2. Reset_Handler thiếu bit T    -> %s\n", prvBootErrName(rArm));
+    printf("  3. MSP trỏ ra ngoài RAM         -> %s\n", prvBootErrName(rMsp));
+    printf("  4. VTOR lệch biên 512 bytes     -> %s\n\n", prvBootErrName(rVtor));
+
+    assert(rOk == BOOT_SUCCESS && rArm == BOOT_ERR_NOT_THUMB &&
+           rMsp == BOOT_ERR_INVALID_MSP && rVtor == BOOT_ERR_VTOR_ALIGNMENT);
+
+    BootResult_t jumpRes = Jump_To_Application(validAppAddr, validMsp, Simulated_App_Reset_Handler);
+    assert(jumpRes == BOOT_SUCCESS && g_core.VTOR == validAppAddr && g_core.MSP == validMsp && g_core.appExecuted);
+
+    printf("[CHUYỂN QUYỀN ĐIỀU KHIỂN THÀNH CÔNG]:\n");
+    printf("  SCB->VTOR : 0x08000000 (Bootloader)  ===>  0x%08X (RTOS App Vectors)\n", g_core.VTOR);
+    printf("  MSP       : 0x20001000 (Bootloader)  ===>  0x%08X (RTOS Clean Stack)\n", g_core.MSP);
+    printf("  Trạng thái: FreeRTOS vTaskStartScheduler() đang thực thi!\n\n");
+
+    printf(">>> [TEST PASSED] bt_17_1_vtor_app_vector_jump completed successfully.\n");
+    return 0;
+}
 ```
 </details>
 
@@ -445,12 +558,20 @@ typedef void (*AppEntryFunc_t)(void);
 <details>
 <summary><b>👉 Xem mã nguồn tham khảo &amp; Giải pháp (Solution)</b></summary>
 
+#### 💻 Mã Nguồn Hoàn Chỉnh (`bt_17_2_dual_bank_ping_pong_staging.c`)
 ```c
+/**
+ * @file bt_17_2_dual_bank_ping_pong_staging.c
+ * @brief Quản lý phân vùng kép Dual-Bank Flash Ping-Pong Staging & Anti-Rollback.
+ */
+
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
 #include <assert.h>
+
+#define FLASH_BANK_SIZE_BYTES   (256U * 1024U)
 
 typedef enum {
     BANK_1 = 0,
@@ -458,11 +579,143 @@ typedef enum {
 } BankId_t;
 
 typedef enum {
-    OTA_STATUS_IDLE = 0,
-    OTA_STATUS_DOWNLOADING,
-    OTA_STATUS_STAGED,
-    OTA_STATUS_CONFIRMED
-} OTAStatus_t;
+    OTA_STATE_IDLE = 0,
+    OTA_STATE_DOWNLOADING,
+    OTA_STATE_STAGED_READY,
+    OTA_STATE_TESTING_NEW_IMAGE,
+    OTA_STATE_CONFIRMED_STABLE
+} OTAState_t;
+
+typedef struct {
+    BankId_t   activeBank;
+    BankId_t   stagedBank;
+    OTAState_t state;
+    uint32_t   activeVersion;
+    uint32_t   stagedVersion;
+    uint32_t   bytesReceived;
+    uint32_t   expectedTotalBytes;
+    bool       rebootPending;
+} DualBankManager_t;
+
+void DualBank_Init(DualBankManager_t *mgr, BankId_t initialBank, uint32_t currentVersion) {
+    if (mgr == NULL) {
+        return;
+    }
+    memset(mgr, 0, sizeof(DualBankManager_t));
+    mgr->activeBank = initialBank;
+    mgr->stagedBank = (initialBank == BANK_1) ? BANK_2 : BANK_1;
+    mgr->state = OTA_STATE_CONFIRMED_STABLE;
+    mgr->activeVersion = currentVersion;
+}
+
+/* TODO: [1] Trả về Bank nhàn rỗi (Inactive) để tải firmware ngầm mà không ảnh hưởng app đang chạy */
+BankId_t DualBank_GetInactiveBank(const DualBankManager_t *mgr) {
+    if (mgr == NULL) {
+        return BANK_2;
+    }
+    return (mgr->activeBank == BANK_1) ? BANK_2 : BANK_1;
+}
+
+/* TODO: [2] Bắt đầu tải OTA kèm quy tắc Anti-Rollback (newVersion PHẢI > activeVersion) */
+bool DualBank_StartDownload(DualBankManager_t *mgr, uint32_t newVersion, uint32_t totalBytes) {
+    if ((mgr == NULL) || (totalBytes == 0U) || (totalBytes > FLASH_BANK_SIZE_BYTES)) {
+        return false;
+    }
+    if (newVersion <= mgr->activeVersion) {
+        return false; /* Chống tấn công hạ cấp Anti-Rollback! */
+    }
+    mgr->stagedBank = DualBank_GetInactiveBank(mgr);
+    mgr->stagedVersion = newVersion;
+    mgr->expectedTotalBytes = totalBytes;
+    mgr->bytesReceived = 0U;
+    mgr->state = OTA_STATE_DOWNLOADING;
+    mgr->rebootPending = false;
+    return true;
+}
+
+bool DualBank_WriteChunk(DualBankManager_t *mgr, const uint8_t *data, uint16_t len) {
+    if ((mgr == NULL) || (data == NULL) || (mgr->state != OTA_STATE_DOWNLOADING)) {
+        return false;
+    }
+    if ((mgr->bytesReceived + len) > mgr->expectedTotalBytes) {
+        return false;
+    }
+    mgr->bytesReceived += len;
+    if (mgr->bytesReceived == mgr->expectedTotalBytes) {
+        mgr->state = OTA_STATE_STAGED_READY;
+    }
+    return true;
+}
+
+/* TODO: [3] Tráo đổi con trỏ Active Bank sau khi tải hoàn tất & đặt cờ Testing */
+bool DualBank_FinalizeAndSwap(DualBankManager_t *mgr) {
+    if ((mgr == NULL) || (mgr->state != OTA_STATE_STAGED_READY)) {
+        return false;
+    }
+    BankId_t prev = mgr->activeBank;
+    mgr->activeBank = mgr->stagedBank;
+    mgr->stagedBank = prev;
+    mgr->state = OTA_STATE_TESTING_NEW_IMAGE;
+    mgr->rebootPending = true;
+    return true;
+}
+
+bool DualBank_ConfirmStable(DualBankManager_t *mgr) {
+    if ((mgr == NULL) || (mgr->state != OTA_STATE_TESTING_NEW_IMAGE)) {
+        return false;
+    }
+    mgr->activeVersion = mgr->stagedVersion;
+    mgr->state = OTA_STATE_CONFIRMED_STABLE;
+    mgr->rebootPending = false;
+    return true;
+}
+
+static void Print_FlashMap(const char *stage, const DualBankManager_t *m) {
+    const char *b1Status = (m->activeBank == BANK_1) ? "ACTIVE  " : "INACTIVE";
+    const char *b2Status = (m->activeBank == BANK_2) ? "ACTIVE  " : "INACTIVE";
+    uint32_t b1Ver = (m->activeBank == BANK_1) ? m->activeVersion : m->stagedVersion;
+    uint32_t b2Ver = (m->activeBank == BANK_2) ? m->activeVersion : m->stagedVersion;
+
+    printf("  [%s]\n", stage);
+    printf("    +------------+----------------------+----------------------+------------+\n");
+    printf("    | Bootloader | Bank1 (%s)     | Bank2 (%s)     | NVM Flag   |\n", b1Status, b2Status);
+    printf("    | 0x08000000 | v0x%04X @0x08020000  | v0x%04X @0x08060000  | State=%d    |\n",
+           b1Ver, b2Ver, (int)m->state);
+    printf("    +------------+----------------------+----------------------+------------+\n\n");
+}
+
+int main(void) {
+    printf("================================================================================\n");
+    printf("   BÀI TẬP 17.2: DUAL-BANK PING-PONG OTA STAGING & ZERO-BRICK PROTECTION        \n");
+    printf("================================================================================\n");
+
+    DualBankManager_t otaMgr;
+    DualBank_Init(&otaMgr, BANK_1, 0x0100U);
+    Print_FlashMap("0. Trạng thái xuất xưởng: Đang chạy v1.0 tại BANK_1", &otaMgr);
+
+    bool downgradeReject = DualBank_StartDownload(&otaMgr, 0x0090U, 1024U);
+    printf("[1] Kiểm tra Anti-Rollback: Thử nạp v0.9 cũ hơn -> %s\n\n",
+           downgradeReject ? "LỖI!" : "BỊ CHẶN AN TOÀN!");
+    assert(!downgradeReject);
+
+    assert(DualBank_StartDownload(&otaMgr, 0x0200U, 128U));
+    uint8_t chunk[64];
+    memset(chunk, 0x55, sizeof(chunk));
+    assert(DualBank_WriteChunk(&otaMgr, chunk, 64U));
+    Print_FlashMap("2. Đang tải ngầm v2.0 (50%: 64/128B vào BANK_2) — Bank1 vẫn chạy!", &otaMgr);
+
+    assert(DualBank_WriteChunk(&otaMgr, chunk, 64U));
+    assert(otaMgr.state == OTA_STATE_STAGED_READY);
+
+    assert(DualBank_FinalizeAndSwap(&otaMgr));
+    Print_FlashMap("3. Tráo đổi Active -> BANK_2 (State=TESTING, Reboot Pending)", &otaMgr);
+
+    assert(DualBank_ConfirmStable(&otaMgr));
+    Print_FlashMap("4. Self-Test hoàn tất -> Xác nhận v2.0 CONFIRMED_STABLE trên BANK_2!", &otaMgr);
+
+    printf(">>> [TEST PASSED] bt_17_2_dual_bank_ping_pong_staging completed successfully.\n");
+    return 0;
+}
 ```
 </details>
 
@@ -482,21 +735,196 @@ typedef enum {
 <details>
 <summary><b>👉 Xem mã nguồn tham khảo &amp; Giải pháp (Solution)</b></summary>
 
+#### 💻 Mã Nguồn Hoàn Chỉnh (`bt_17_3_firmware_crc32_signature_rollback.c`)
 ```c
+/**
+ * @file bt_17_3_firmware_crc32_signature_rollback.c
+ * @brief Xác thực toàn vẹn IEEE 802.3 CRC-32 & Máy trạng thái Safe Rollback.
+ */
+
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
 #include <assert.h>
 
-#define FW_MAGIC_NUMBER     (0x53544D32U) /* 'STM2' */
-#define CRC32_POLYNOMIAL    (0x04C11DB7U)
+#define FW_MAGIC_NUMBER             (0x53544D32U) /* 'STM2' */
+#define CRC32_POLYNOMIAL_REFLECTED  (0xEDB88320U)
+#define MAX_BOOT_ATTEMPTS           (3U)
 
 typedef enum {
-    BOOT_STATE_GOLDEN = 0,
-    BOOT_STATE_TESTING,
-    BOOT_STATE_CONFIRMED,
-    BOOT_STATE_ROLLED_BACK
+    BOOT_STATE_GOLDEN_STABLE = 0,
+    BOOT_STATE_TESTING_NEW_FW,
+    BOOT_STATE_CONFIRMED_PERMANENT,
+    BOOT_STATE_ROLLED_BACK_TO_GOLDEN
 } RollbackState_t;
+
+typedef struct {
+    uint32_t magic;
+    uint32_t version;
+    uint32_t payloadLength;
+    uint32_t payloadCrc32;
+} FirmwareHeader_t;
+
+typedef struct {
+    RollbackState_t state;
+    uint8_t  bootAttempts;
+    uint32_t currentRunningVersion;
+    uint32_t goldenVersion;
+} RollbackController_t;
+
+/* TODO: [1] Cài đặt thuật toán tính toán mã kiểm lỗi CRC-32 IEEE 802.3 (Reflected 0xEDB88320) */
+uint32_t Calculate_CRC32_IEEE8023(const uint8_t *data, size_t length) {
+    uint32_t crc = 0xFFFFFFFFU;
+    for (size_t i = 0U; i < length; i++) {
+        crc ^= (uint32_t)data[i];
+        for (uint8_t bit = 0U; bit < 8U; bit++) {
+            if ((crc & 1U) != 0U) {
+                crc = (crc >> 1U) ^ CRC32_POLYNOMIAL_REFLECTED;
+            } else {
+                crc = (crc >> 1U);
+            }
+        }
+    }
+    return ~crc;
+}
+
+void Rollback_Init(RollbackController_t *ctrl, uint32_t goldenVersion) {
+    if (ctrl != NULL) {
+        memset(ctrl, 0, sizeof(RollbackController_t));
+        ctrl->state = BOOT_STATE_GOLDEN_STABLE;
+        ctrl->currentRunningVersion = goldenVersion;
+        ctrl->goldenVersion = goldenVersion;
+    }
+}
+
+bool Validate_Firmware_Image(const FirmwareHeader_t *hdr, const uint8_t *payload, uint32_t *outComputed) {
+    if ((hdr == NULL) || (payload == NULL) || (hdr->magic != FW_MAGIC_NUMBER) || (hdr->payloadLength == 0U)) {
+        return false;
+    }
+    uint32_t computed = Calculate_CRC32_IEEE8023(payload, hdr->payloadLength);
+    if (outComputed != NULL) {
+        *outComputed = computed;
+    }
+    return (computed == hdr->payloadCrc32);
+}
+
+void Rollback_StartTrial(RollbackController_t *ctrl, uint32_t newVersion) {
+    if (ctrl != NULL) {
+        ctrl->state = BOOT_STATE_TESTING_NEW_FW;
+        ctrl->currentRunningVersion = newVersion;
+        ctrl->bootAttempts = 1U;
+    }
+}
+
+bool Rollback_ConfirmSuccess(RollbackController_t *ctrl) {
+    if ((ctrl == NULL) || (ctrl->state != BOOT_STATE_TESTING_NEW_FW)) {
+        return false;
+    }
+    ctrl->state = BOOT_STATE_CONFIRMED_PERMANENT;
+    ctrl->bootAttempts = 0U;
+    return true;
+}
+
+/* TODO: [2] Xử lý Watchdog Crash khi bản thử nghiệm chưa kịp Confirm: Rollback sau MAX_BOOT_ATTEMPTS */
+void Rollback_HandleWatchdogCrash(RollbackController_t *ctrl) {
+    if ((ctrl == NULL) || (ctrl->state != BOOT_STATE_TESTING_NEW_FW)) {
+        return;
+    }
+    ctrl->bootAttempts++;
+    if (ctrl->bootAttempts > MAX_BOOT_ATTEMPTS) {
+        ctrl->state = BOOT_STATE_ROLLED_BACK_TO_GOLDEN;
+        ctrl->currentRunningVersion = ctrl->goldenVersion;
+        ctrl->bootAttempts = 0U;
+    }
+}
+
+static const char *prvStateStr(RollbackState_t st) {
+    switch (st) {
+        case BOOT_STATE_GOLDEN_STABLE:        return "GOLDEN_STABLE";
+        case BOOT_STATE_TESTING_NEW_FW:       return "TESTING_NEW_FW";
+        case BOOT_STATE_CONFIRMED_PERMANENT:  return "CONFIRMED_PERMANENT";
+        case BOOT_STATE_ROLLED_BACK_TO_GOLDEN:return "ROLLED_BACK_TO_GOLDEN!";
+        default:                              return "UNKNOWN";
+    }
+}
+
+int main(void) {
+    printf("================================================================================\n");
+    printf("   BÀI TẬP 17.3: XÁC THỰC CRC-32 IEEE 802.3 & MÁY TRẠNG THÁI SAFE ROLLBACK      \n");
+    printf("================================================================================\n");
+
+    const uint8_t testVec[] = "123456789";
+    uint32_t stdCrc = Calculate_CRC32_IEEE8023(testVec, 9U);
+    printf("[1] Kiểm chuẩn IEEE 802.3 CRC-32 (Chuỗi \"123456789\"): 0x%08X (Chuẩn = 0xCBF43926)\n\n",
+           stdCrc);
+    assert(stdCrc == 0xCBF43926U);
+
+    uint8_t payload[] = "FIRMWARE_BINARY_DATA_V2";
+    size_t payloadLen = strlen((char *)payload);
+    uint32_t validCrc = Calculate_CRC32_IEEE8023(payload, payloadLen);
+    FirmwareHeader_t hdr = { FW_MAGIC_NUMBER, 0x0200U, (uint32_t)payloadLen, validCrc };
+
+    uint32_t computed = 0U;
+    bool okImg = Validate_Firmware_Image(&hdr, payload, &computed);
+    printf("[2] Kiểm tra Firmware Header (Magic=0x%08X ('STM2'), Ver=0x%04X, Len=%uB):\n",
+           hdr.magic, hdr.version, hdr.payloadLength);
+    printf("  - Gói nguyên vẹn     : HeaderCRC=0x%08X == Computed=0x%08X -> %s\n",
+           hdr.payloadCrc32, computed, okImg ? "VALID" : "INVALID");
+    assert(okImg);
+
+    payload[0] ^= 0x01U; /* Đảo 1 bit lỗi do nhiễu sóng */
+    bool badImg = Validate_Firmware_Image(&hdr, payload, &computed);
+    printf("  - Gói hỏng 1 bit     : HeaderCRC=0x%08X != Computed=0x%08X -> %s\n\n",
+           hdr.payloadCrc32, computed, badImg ? "VALID (SAI)" : "REJECTED!");
+    assert(!badImg);
+
+    printf("[3] KỊCH BẢN BOOT-LOOP SAFE ROLLBACK (Bản v2.0 bị HardFault ngay sau khởi động):\n");
+    RollbackController_t ctrl;
+    Rollback_Init(&ctrl, 0x0100U);
+    printf("  Step 0 (Khởi tạo)   : State=%-22s | Ver=0x%04X | Attempts=%u\n",
+           prvStateStr(ctrl.state), ctrl.currentRunningVersion, ctrl.bootAttempts);
+
+    Rollback_StartTrial(&ctrl, 0x0200U);
+    printf("  Step 1 (Boot v2.0)  : State=%-22s | Ver=0x%04X | Attempts=%u/%u\n",
+           prvStateStr(ctrl.state), ctrl.currentRunningVersion, ctrl.bootAttempts, MAX_BOOT_ATTEMPTS);
+
+    for (uint8_t crash = 1U; crash <= 3U; crash++) {
+        Rollback_HandleWatchdogCrash(&ctrl);
+        printf("  Step %u (WDT Crash#%u): State=%-22s | Ver=0x%04X | Attempts=%u\n",
+               crash + 1U, crash, prvStateStr(ctrl.state), ctrl.currentRunningVersion, ctrl.bootAttempts);
+    }
+    printf("\n");
+
+    assert(ctrl.state == BOOT_STATE_ROLLED_BACK_TO_GOLDEN && ctrl.currentRunningVersion == 0x0100U);
+    printf(">>> [TEST PASSED] bt_17_3_firmware_crc32_signature_rollback completed successfully.\n");
+    return 0;
+}
 ```
 </details>
+
+---
+
+## 🧭 HƯỚNG DẪN BẮT ĐẦU THỰC HÀNH TRÊN LINUX WSL
+1. Làm toàn bộ phần trắc nghiệm & phân tích tình huống trong tài liệu này trước khi viết code.
+2. Từ thư mục gốc `Bài tập/` trên máy ảo Linux WSL Ubuntu, biên dịch và chạy toàn bộ các bài lab của bài học này bằng lệnh:
+   ```bash
+   # Kiểm tra nhanh môi trường (lần đầu)
+   make check-env
+
+   # Biên dịch & chạy chi tiết kèm sơ đồ/bảng log trực quan trên terminal
+   make run-bai17
+
+   # Chạy kèm AddressSanitizer & UBSan để phát hiện lỗi bộ nhớ/UB
+   make MODE=asan run-bai17
+
+   # Hoặc kiểm tra từng bài riêng trong thư mục Bai_lam/Module_05_Troubleshooting_Production_OTA/Bai_17_Bootloader_and_OTA
+   cd "Bai_lam/Module_05_Troubleshooting_Production_OTA/Bai_17_Bootloader_and_OTA"
+   make run
+   make valgrind
+   ```
+3. Các file mã nguồn cần hoàn thiện:
+   - `bt_17_1_vtor_app_vector_jump.c`
+   - `bt_17_2_dual_bank_ping_pong_staging.c`
+   - `bt_17_3_firmware_crc32_signature_rollback.c`
+4. Đảm bảo toàn bộ các bài đọc log phân tích đầy đủ và kết thúc với dòng `>>> [TEST PASSED]`.

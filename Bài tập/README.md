@@ -106,15 +106,44 @@ Mỗi bài tập trong bộ đề không đơn thuần là chớp tắt LED vô 
 | **Bài 17** | Bootloader, Dual-Bank Flash & Secure OTA | Vector Table Relocation (`SCB->VTOR`), Thumb Bit Check, RTOS Safe Reboot to Bootloader, Dual-Bank Ping-Pong Swap, CRC32 Rollback | [`Bai_17_Bootloader_and_OTA_Exercises.md`](./Module_05_Troubleshooting_Production_OTA/Bai_17_Bootloader_and_OTA_Exercises.md) | [`Bai_17_Bootloader_and_OTA`](./Bai_lam/Module_05_Troubleshooting_Production_OTA/Bai_17_Bootloader_and_OTA/) |
 | **Bài 18** | Quality Assurance, Testing & CI/CD | Host-Based Unit Testing & Mock FreeRTOS, MISRA C:2012 Strict Casting, Cppcheck Static Analysis, Automated GitHub Actions Runner | [`Bai_18_QA_Testing_CICD_Exercises.md`](./Module_05_Troubleshooting_Production_OTA/Bai_18_QA_Testing_CICD_Exercises.md) | [`Bai_18_QA_Testing_CICD`](./Bai_lam/Module_05_Troubleshooting_Production_OTA/Bai_18_QA_Testing_CICD/) |
 
+### 🏗️ PHẦN C — 3 DỰ ÁN CAPSTONE ĐA LUỒNG THỰC CHIẾN (`POSIX sim_rtos` TRÊN LINUX WSL)
+> Kết hợp đa module hoàn chỉnh (`.h` + `src/*.c` + `Makefile`), chạy đồng thời nhiều tác vụ thật trên nhân POSIX `sim_rtos` (`pthread` + `CLOCK_MONOTONIC` + `pthread_cond`) kèm chế độ kiểm thử tự động (`--selftest`) và bảng điều khiển tiêm lỗi tương tác (`--cli`):
+
+| Dự Án | Kiến Trúc & Kỹ Năng Cấp Độ Junior 1 Năm Kinh Nghiệm | Thư Mục Mã Nguồn | Lệnh Chạy Trên WSL |
+| :---: | :--- | :--- | :--- |
+| **Capstone 01** | **Smart Telemetry Node**: `xTaskCreateStatic`, `xTaskDelayUntil(50ms)`, Tagged Union Queue, `xEventGroupSync` Rendezvous, UART Gatekeeper Mutex-Free, Timer Daemon (Auto-Reload + One-Shot Reset) | [`capstone_01_smart_telemetry_node`](./Bai_lam/Capstones/capstone_01_smart_telemetry_node/) | `make run-cap1` / `make cli-cap1` |
+| **Capstone 02** | **Industrial ECU Controller**: UART ISR Thread -> Lockless SPSC Stream Buffer + Task Notification -> Protocol FSM Decoder -> Zero-Copy Static Buffer Pool -> Layered HAL VTable (Active-Low Relay) | [`capstone_02_industrial_ecu_controller`](./Bai_lam/Capstones/capstone_02_industrial_ecu_controller/) | `make run-cap2` / `make cli-cap2` |
+| **Capstone 03** | **Production OTA & Watchdog Node**: Dual-Bank Bootloader (`VTOR`, CRC-32 IEEE 802.3, Auto-Rollback sau 3 WDT Crashes) + Multi-Task Software Watchdog + Backup SRAM Post-Mortem Black-Box | [`capstone_03_production_ota_watchdog`](./Bai_lam/Capstones/capstone_03_production_ota_watchdog/) | `make run-cap3` / `make cli-cap3` |
+
+> 📘 **Chuyển đổi lên phần cứng STM32 thật:** Xem bảng quy chiếu API & mẫu cấu hình `FreeRTOSConfig.h` chuẩn Production tại [`FreeRTOS_STM32_Port_Reference.md`](./FreeRTOS_STM32_Port_Reference.md).
+
 ---
 
-## 🛠️ HƯỚNG DẪN BIÊN DỊCH & CHẠY BÀI TẬP
+## 🐧 HƯỚNG DẪN THỰC HÀNH VỚI MAKEFILE TRÊN LINUX WSL / UBUNTU
 
-Tất cả các bài tập code đều được thiết kế kèm **Test Harness** độc lập có thể biên dịch trực tiếp trên máy tính cá nhân bằng **GCC / MinGW**:
+Toàn bộ kho bài tập được trang bị hệ thống **`Makefile` phân cấp chuẩn Unix `LF`** (gồm [`Makefile`](./Makefile) gốc, [`Bai_lam/Makefile`](./Bai_lam/Makefile), `18` `Makefile` cấp bài học và `3` `Makefile` dự án Capstone):
 
-```powershell
-# Biên dịch file bài làm C:
-gcc -Wall -Wextra -std=c11 bt_x_x.c -o bt_x_x.exe
-.\bt_x_x.exe
+```bash
+# 1. Mở terminal WSL Ubuntu & đi tới thư mục Bài tập:
+cd "/mnt/d/COURSE/STM32/EMBEDDED/EMBEDDED RTOS/Bài tập"
+
+# 2. Kiểm tra môi trường (GCC, GNU Make, GDB, Valgrind, Binutils):
+make check-env
+
+# 3. Biên dịch & chạy kiểm thử TẤT CẢ 53 bài Lab + 3 Dự án Capstone (56 targets):
+make run
+
+# 4. Chạy theo từng Module hoặc từng Bài học cụ thể (xem trace & biểu đồ chi tiết):
+make run-mod1          # Chạy toàn bộ Module 01 (Bài 01..04)
+make run-bai03         # Chạy riêng Bài 03 (Gantt Scheduler 3 chế độ, CLZ Bitmap, Idle Load)
+make run-bai14         # Chạy Bài 14 (bao gồm SMP Spinlock 2 POSIX threads đua thật!)
+make run-capstone      # Chạy toàn bộ 3 Dự án Capstone đa luồng POSIX
+make cli-cap1          # Mở giao diện CLI tiêm lỗi trực tiếp cho Capstone 01
+
+# 5. Kiểm tra chất lượng bộ nhớ & săn lỗi chuẩn doanh nghiệp trên WSL:
+make asan              # Biên dịch toàn bộ với AddressSanitizer & UndefinedBehaviorSanitizer
+make valgrind          # Quét rò rỉ bộ nhớ & truy cập ngoài biên trên toàn bộ 56 targets
+make clean             # Dọn sạch toàn bộ thư mục build/
 ```
+
 

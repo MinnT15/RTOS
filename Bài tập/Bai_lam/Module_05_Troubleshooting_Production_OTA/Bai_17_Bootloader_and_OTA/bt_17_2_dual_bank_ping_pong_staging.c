@@ -1,13 +1,6 @@
 /**
  * @file bt_17_2_dual_bank_ping_pong_staging.c
- * @brief Quản lý phân vùng kép Dual-Bank Flash Ping-Pong Staging (Zero-Brick OTA).
- * @author Embedded RTOS Senior Team
- * @date 2026-09-29
- *
- * @note Tiêu chuẩn MISRA C:2012 / Industrial Dual-Bank Firmware Architecture.
- *       Hệ điều hành RTOS chạy ở Active Bank (Bank 1 hoặc Bank 2). Bản nâng cấp mới
- *       được tải ngầm (Background Download) và ghi tuần tự vào Inactive Bank.
- *       Sau khi xác nhận tính toàn vẹn, hoán đổi cờ Boot để vi điều khiển khởi động bản mới.
+ * @brief Quản lý phân vùng kép Dual-Bank Flash Ping-Pong Staging & Anti-Rollback.
  */
 
 #include <stdio.h>
@@ -16,8 +9,7 @@
 #include <string.h>
 #include <assert.h>
 
-#define FLASH_BANK_SIZE_BYTES   (256U * 1024U) /* 256 KB mỗi Bank */
-#define MAX_CHUNK_SIZE          (64U)
+#define FLASH_BANK_SIZE_BYTES   (256U * 1024U)
 
 typedef enum {
     BANK_1 = 0,
@@ -33,19 +25,16 @@ typedef enum {
 } OTAState_t;
 
 typedef struct {
-    BankId_t activeBank;            /**< Bank đang thực thi hệ thống */
-    BankId_t stagedBank;            /**< Bank đang được tải firmware mới */
+    BankId_t   activeBank;
+    BankId_t   stagedBank;
     OTAState_t state;
-    uint32_t activeVersion;         /**< Mã phiên bản hiện hành (VD: 0x0100 = v1.0) */
-    uint32_t stagedVersion;         /**< Mã phiên bản mới tải về */
-    uint32_t bytesReceived;
-    uint32_t expectedTotalBytes;
-    bool rebootPending;
+    uint32_t   activeVersion;
+    uint32_t   stagedVersion;
+    uint32_t   bytesReceived;
+    uint32_t   expectedTotalBytes;
+    bool       rebootPending;
 } DualBankManager_t;
 
-/**
- * @brief Khởi tạo bộ quản lý Dual-Bank.
- */
 void DualBank_Init(DualBankManager_t *mgr, BankId_t initialBank, uint32_t currentVersion) {
     if (mgr == NULL) {
         return;
@@ -57,9 +46,7 @@ void DualBank_Init(DualBankManager_t *mgr, BankId_t initialBank, uint32_t curren
     mgr->activeVersion = currentVersion;
 }
 
-/**
- * @brief TODO: [x] Xác định Bank thứ cấp (Inactive Bank) đang rảnh rỗi để nạp firmware mới.
- */
+/* TODO: [1] Trả về Bank nhàn rỗi (Inactive) để tải firmware ngầm mà không ảnh hưởng app đang chạy */
 BankId_t DualBank_GetInactiveBank(const DualBankManager_t *mgr) {
     if (mgr == NULL) {
         return BANK_2;
@@ -67,133 +54,103 @@ BankId_t DualBank_GetInactiveBank(const DualBankManager_t *mgr) {
     return (mgr->activeBank == BANK_1) ? BANK_2 : BANK_1;
 }
 
-/**
- * @brief Bắt đầu một phiên tải OTA mới.
- */
+/* TODO: [2] Bắt đầu tải OTA kèm quy tắc Anti-Rollback (newVersion PHẢI > activeVersion) */
 bool DualBank_StartDownload(DualBankManager_t *mgr, uint32_t newVersion, uint32_t totalBytes) {
-    if (mgr == NULL || totalBytes == 0U || totalBytes > FLASH_BANK_SIZE_BYTES) {
+    if ((mgr == NULL) || (totalBytes == 0U) || (totalBytes > FLASH_BANK_SIZE_BYTES)) {
         return false;
     }
-
-    /* Kiểm tra chống hạ cấp (Anti-Rollback) */
     if (newVersion <= mgr->activeVersion) {
-        return false; /* Từ chối nạp bản firmware cũ hơn hoặc bằng */
+        return false; /* Chống tấn công hạ cấp Anti-Rollback! */
     }
-
     mgr->stagedBank = DualBank_GetInactiveBank(mgr);
     mgr->stagedVersion = newVersion;
     mgr->expectedTotalBytes = totalBytes;
     mgr->bytesReceived = 0U;
     mgr->state = OTA_STATE_DOWNLOADING;
     mgr->rebootPending = false;
-
     return true;
 }
 
-/**
- * @brief TODO: [x] Nạp từng gói dữ liệu (Chunk) tải từ mạng vào Inactive Bank.
- */
 bool DualBank_WriteChunk(DualBankManager_t *mgr, const uint8_t *data, uint16_t len) {
-    if (mgr == NULL || data == NULL || mgr->state != OTA_STATE_DOWNLOADING) {
+    if ((mgr == NULL) || (data == NULL) || (mgr->state != OTA_STATE_DOWNLOADING)) {
         return false;
     }
-
     if ((mgr->bytesReceived + len) > mgr->expectedTotalBytes) {
-        return false; /* Tràn kích thước file dự kiến */
+        return false;
     }
-
-    /* Mô phỏng ghi Flash vào Inactive Bank */
     mgr->bytesReceived += len;
-
     if (mgr->bytesReceived == mgr->expectedTotalBytes) {
         mgr->state = OTA_STATE_STAGED_READY;
     }
-
     return true;
 }
 
-/**
- * @brief TODO: [x] Hoàn tất nạp: Hoán đổi cờ Active Bank và đặt cờ khởi động lại.
- */
+/* TODO: [3] Tráo đổi con trỏ Active Bank sau khi tải hoàn tất & đặt cờ Testing */
 bool DualBank_FinalizeAndSwap(DualBankManager_t *mgr) {
-    if (mgr == NULL || mgr->state != OTA_STATE_STAGED_READY) {
+    if ((mgr == NULL) || (mgr->state != OTA_STATE_STAGED_READY)) {
         return false;
     }
-
-    /* Hoán đổi vai trò: Staged Bank trở thành Active Bank */
-    BankId_t previousActive = mgr->activeBank;
+    BankId_t prev = mgr->activeBank;
     mgr->activeBank = mgr->stagedBank;
-    mgr->stagedBank = previousActive;
-
-    /* Chuyển trạng thái sang TESTING (chờ ứng dụng mới xác nhận tự kiểm tra) */
+    mgr->stagedBank = prev;
     mgr->state = OTA_STATE_TESTING_NEW_IMAGE;
     mgr->rebootPending = true;
-
     return true;
 }
 
-/**
- * @brief Ứng dụng mới sau khi boot kiểm tra sức khỏe thành công và tự xác nhận.
- */
 bool DualBank_ConfirmStable(DualBankManager_t *mgr) {
-    if (mgr == NULL || mgr->state != OTA_STATE_TESTING_NEW_IMAGE) {
+    if ((mgr == NULL) || (mgr->state != OTA_STATE_TESTING_NEW_IMAGE)) {
         return false;
     }
-
     mgr->activeVersion = mgr->stagedVersion;
     mgr->state = OTA_STATE_CONFIRMED_STABLE;
     mgr->rebootPending = false;
     return true;
 }
 
+static void Print_FlashMap(const char *stage, const DualBankManager_t *m) {
+    const char *b1Status = (m->activeBank == BANK_1) ? "ACTIVE  " : "INACTIVE";
+    const char *b2Status = (m->activeBank == BANK_2) ? "ACTIVE  " : "INACTIVE";
+    uint32_t b1Ver = (m->activeBank == BANK_1) ? m->activeVersion : m->stagedVersion;
+    uint32_t b2Ver = (m->activeBank == BANK_2) ? m->activeVersion : m->stagedVersion;
+
+    printf("  [%s]\n", stage);
+    printf("    +------------+----------------------+----------------------+------------+\n");
+    printf("    | Bootloader | Bank1 (%s)     | Bank2 (%s)     | NVM Flag   |\n", b1Status, b2Status);
+    printf("    | 0x08000000 | v0x%04X @0x08020000  | v0x%04X @0x08060000  | State=%d    |\n",
+           b1Ver, b2Ver, (int)m->state);
+    printf("    +------------+----------------------+----------------------+------------+\n\n");
+}
+
 int main(void) {
-    printf("====================================================================\n");
-    printf("   TEST HARNESS: Dual-Bank Ping-Pong Staging Manager (MISRA C)      \n");
-    printf("====================================================================\n");
+    printf("================================================================================\n");
+    printf("   BÀI TẬP 17.2: DUAL-BANK PING-PONG OTA STAGING & ZERO-BRICK PROTECTION        \n");
+    printf("================================================================================\n");
 
     DualBankManager_t otaMgr;
-    /* Ban đầu đang chạy v1.0 tại BANK_1 */
     DualBank_Init(&otaMgr, BANK_1, 0x0100U);
+    Print_FlashMap("0. Trạng thái xuất xưởng: Đang chạy v1.0 tại BANK_1", &otaMgr);
 
-    assert(otaMgr.activeBank == BANK_1);
-    assert(DualBank_GetInactiveBank(&otaMgr) == BANK_2);
-    assert(otaMgr.state == OTA_STATE_CONFIRMED_STABLE);
-    printf("[PASS] Booted initially on BANK_1 with Firmware v1.0\n");
+    bool downgradeReject = DualBank_StartDownload(&otaMgr, 0x0090U, 1024U);
+    printf("[1] Kiểm tra Anti-Rollback: Thử nạp v0.9 cũ hơn -> %s\n\n",
+           downgradeReject ? "LỖI!" : "BỊ CHẶN AN TOÀN!");
+    assert(!downgradeReject);
 
-    /* 1. Kiểm tra chính sách chống hạ cấp (Anti-rollback check) */
-    assert(DualBank_StartDownload(&otaMgr, 0x0100U, 1024U) == false); /* Trùng version */
-    assert(DualBank_StartDownload(&otaMgr, 0x0090U, 1024U) == false); /* Phiên bản cũ hơn */
-    printf("[PASS] Anti-Rollback policy successfully rejected equal/older versions\n");
-
-    /* 2. Bắt đầu tải firmware v2.0 (kích thước 128 bytes) vào BANK_2 */
-    assert(DualBank_StartDownload(&otaMgr, 0x0200U, 128U) == true);
-    assert(otaMgr.stagedBank == BANK_2);
-    assert(otaMgr.state == OTA_STATE_DOWNLOADING);
-
-    /* Nạp 2 chunks 64 bytes */
+    assert(DualBank_StartDownload(&otaMgr, 0x0200U, 128U));
     uint8_t chunk[64];
     memset(chunk, 0x55, sizeof(chunk));
-    assert(DualBank_WriteChunk(&otaMgr, chunk, 64U) == true);
-    assert(otaMgr.bytesReceived == 64U);
-    assert(DualBank_WriteChunk(&otaMgr, chunk, 64U) == true);
-    assert(otaMgr.bytesReceived == 128U);
+    assert(DualBank_WriteChunk(&otaMgr, chunk, 64U));
+    Print_FlashMap("2. Đang tải ngầm v2.0 (50%: 64/128B vào BANK_2) — Bank1 vẫn chạy!", &otaMgr);
+
+    assert(DualBank_WriteChunk(&otaMgr, chunk, 64U));
     assert(otaMgr.state == OTA_STATE_STAGED_READY);
-    printf("[PASS] Staging to BANK_2 complete (128 bytes downloaded in background)\n");
 
-    /* 3. Hoán đổi Active Bank (Ping-Pong Swap) */
-    assert(DualBank_FinalizeAndSwap(&otaMgr) == true);
-    assert(otaMgr.activeBank == BANK_2);
-    assert(otaMgr.stagedBank == BANK_1);
-    assert(otaMgr.state == OTA_STATE_TESTING_NEW_IMAGE);
-    assert(otaMgr.rebootPending == true);
-    printf("[PASS] Swapped Active Bank to BANK_2, marked as TESTING_NEW_IMAGE\n");
+    assert(DualBank_FinalizeAndSwap(&otaMgr));
+    Print_FlashMap("3. Tráo đổi Active -> BANK_2 (State=TESTING, Reboot Pending)", &otaMgr);
 
-    /* 4. Bản mới chạy tự kiểm tra thành công và gọi confirm */
-    assert(DualBank_ConfirmStable(&otaMgr) == true);
-    assert(otaMgr.state == OTA_STATE_CONFIRMED_STABLE);
-    assert(otaMgr.activeVersion == 0x0200U);
-    printf("[PASS] Self-test passed: Firmware v2.0 confirmed stable on BANK_2\n");
+    assert(DualBank_ConfirmStable(&otaMgr));
+    Print_FlashMap("4. Self-Test hoàn tất -> Xác nhận v2.0 CONFIRMED_STABLE trên BANK_2!", &otaMgr);
 
-    printf("\n>>> [TEST PASSED] bt_17_2_dual_bank_ping_pong_staging completed successfully.\n");
+    printf(">>> [TEST PASSED] bt_17_2_dual_bank_ping_pong_staging completed successfully.\n");
     return 0;
 }

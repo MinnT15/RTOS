@@ -573,15 +573,26 @@ void SCB_InvalidateDCache_Simulator(uint32_t addr, uint32_t len) {
 
 ---
 
-## 🧭 HƯỚNG DẪN BẮT ĐẦU THỰC HÀNH
-1. Mở file [Bai_08_Selecting_MCU_Hardware_Exercises.md](./Bai_08_Selecting_MCU_Hardware_Exercises.md) và tự mình làm toàn bộ 18 câu trắc nghiệm.
-2. Di chuyển vào thư mục code: `cd "Bai_lam/Module_03_Hardware_Peripherals_ISR_Drivers/Bai_08_Selecting_MCU_Hardware"`
-3. Lần lượt hoàn thiện các file:
+## 🧭 HƯỚNG DẪN BẮT ĐẦU THỰC HÀNH TRÊN LINUX WSL
+1. Làm toàn bộ phần trắc nghiệm & phân tích tình huống trong tài liệu này trước khi viết code.
+2. Từ thư mục gốc `Bài tập/` trên máy ảo Linux WSL Ubuntu, biên dịch và chạy toàn bộ các bài lab của bài học này bằng lệnh:
+   ```bash
+   # Kiểm tra nhanh môi trường (lần đầu)
+   make check-env
+
+   # Biên dịch & chạy chi tiết kèm sơ đồ/bảng log trực quan trên terminal
+   make run-bai08
+
+   # Chạy kèm AddressSanitizer & UBSan để phát hiện lỗi bộ nhớ/UB
+   make MODE=asan run-bai08
+
+   # Hoặc kiểm tra từng bài riêng trong thư mục Bai_lam/Module_03_Hardware_Peripherals_ISR_Drivers/Bai_08_Selecting_MCU_Hardware
+   cd "Bai_lam/Module_03_Hardware_Peripherals_ISR_Drivers/Bai_08_Selecting_MCU_Hardware"
+   make run
+   make valgrind
+   ```
+3. Các file mã nguồn cần hoàn thiện:
    - `bt_8_1_ram_flash_budget_calculator.c`
    - `bt_8_2_dma_stream_channel_conflict.c`
    - `bt_8_3_cache_coherency_dma_mpu.c`
-4. Biên dịch và kiểm tra tính đúng đắn với GCC:
-   ```powershell
-   gcc -Wall -Wextra -std=c11 bt_8_1_ram_flash_budget_calculator.c -o test.exe; .\test.exe
-   ```
-5. Đảm bảo toàn bộ test case đều hiển thị `>>> [TEST PASSED]`.
+4. Đảm bảo toàn bộ các bài đọc log phân tích đầy đủ và kết thúc với dòng `>>> [TEST PASSED]`.

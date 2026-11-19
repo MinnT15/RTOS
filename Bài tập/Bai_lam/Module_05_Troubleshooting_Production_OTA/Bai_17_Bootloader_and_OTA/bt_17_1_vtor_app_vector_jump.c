@@ -1,12 +1,6 @@
 /**
  * @file bt_17_1_vtor_app_vector_jump.c
- * @brief Trình mô phỏng kiểm tra Vector Table & Nhảy sang RTOS Application (ARM Cortex-M).
- * @author Embedded RTOS Senior Team
- * @date 2026-09-29
- *
- * @note Tiêu chuẩn MISRA C:2012 / ARM Cortex-M Booting & Vector Relocation Architecture.
- *       Mô phỏng quy trình kiểm tra tính hợp lệ của Initial MSP trong RAM, kiểm tra bit Thumb
- *       của Reset_Handler, di dời thanh ghi SCB->VTOR và nhảy quyền điều khiển từ Bootloader sang RTOS.
+ * @brief Kiểm tra Vector Table ARM Cortex-M, Di dời SCB->VTOR & Nhảy sang RTOS App.
  */
 
 #include <stdio.h>
@@ -30,134 +24,106 @@ typedef enum {
 
 typedef void (*AppResetHandler_t)(void);
 
-/* Giả lập các thanh ghi lõi ARM Cortex-M */
 typedef struct {
-    uint32_t VTOR;                  /**< Vector Table Offset Register */
-    uint32_t MSP;                   /**< Main Stack Pointer */
-    uint32_t PC;                    /**< Program Counter */
-    bool appExecuted;               /**< Cờ đánh dấu ứng dụng RTOS đã chạy */
+    uint32_t VTOR;
+    uint32_t MSP;
+    bool     appExecuted;
 } SimulatedCortexCore_t;
 
 static SimulatedCortexCore_t g_core;
 
-/**
- * @brief Khởi tạo trạng thái thanh ghi lõi CPU.
- */
 void Core_Reset(void) {
     memset(&g_core, 0, sizeof(SimulatedCortexCore_t));
-    g_core.VTOR = 0x08000000U; /* Mặc định trỏ về Bootloader lúc khởi động */
+    g_core.VTOR = 0x08000000U;
     g_core.MSP  = 0x20001000U;
 }
 
-/**
- * @brief Hàm giả lập Reset_Handler của ứng dụng RTOS (Application).
- */
 static void Simulated_App_Reset_Handler(void) {
     g_core.appExecuted = true;
 }
 
-/**
- * @brief TODO: [x] Lập trình hàm kiểm tra tính toàn vẹn và hợp lệ của bảng Vector Table.
- *        1. Căn chỉnh địa chỉ appBaseAddr (phải là bội số của 512 bytes, tức 9 bit thấp bằng 0).
- *        2. MSP (tại offset 0) phải nằm trong dải [RAM_START_ADDR, RAM_END_ADDR] và căn chỉnh 4 bytes.
- *        3. Reset_Handler (tại offset 4):
- *           - Phải có bit 0 (Thumb bit) = 1.
- *           - Địa chỉ thực thi (sau khi bỏ bit 0) phải nằm trong vùng Flash của App [APP_FLASH_START, APP_FLASH_END].
- * @param appBaseAddr Địa chỉ bắt đầu của Application.
- * @param initialMsp Giá trị đọc được tại offset 0.
- * @param resetHandlerAddr Giá trị đọc được tại offset 4.
- * @return BootResult_t
- */
+/* TODO: [1] Thẩm định 4 điều kiện Vector Table trước khi nhảy:
+ *       1. Căn chỉnh SCB->VTOR (512 bytes: bit 8..0 == 0).
+ *       2. MSP nằm trong SRAM hợp lệ & căn 4 bytes.
+ *       3. Bit 0 của Reset_Handler (Thumb bit T) PHẢI bằng 1.
+ *       4. Địa chỉ code thực thi nằm trong vùng Flash Application. */
 BootResult_t Validate_App_Vector_Table(uint32_t appBaseAddr, uint32_t initialMsp, uint32_t resetHandlerAddr) {
-    /* 1. Kiểm tra căn chỉnh VTOR (tối thiểu 512 bytes alignment trên Cortex-M) */
     if ((appBaseAddr & 0x1FFU) != 0U) {
         return BOOT_ERR_VTOR_ALIGNMENT;
     }
-
-    /* 2. Kiểm tra Initial MSP trong dải RAM hợp lệ và căn chỉnh word (4-byte aligned) */
     if ((initialMsp < RAM_START_ADDR) || (initialMsp > RAM_END_ADDR) || ((initialMsp & 0x03U) != 0U)) {
         return BOOT_ERR_INVALID_MSP;
     }
-
-    /* 3. Kiểm tra Thumb bit của Reset_Handler */
     if ((resetHandlerAddr & 0x01U) == 0U) {
-        return BOOT_ERR_NOT_THUMB; /* Lỗi nghiêm trọng: Không có bit Thumb trên ARM Cortex-M */
+        return BOOT_ERR_NOT_THUMB;
     }
-
-    /* 4. Kiểm tra địa chỉ code thực thi nằm trong Flash Application */
     uint32_t codeAddr = resetHandlerAddr & (~0x01U);
     if ((codeAddr < APP_FLASH_START) || (codeAddr >= APP_FLASH_END)) {
         return BOOT_ERR_INVALID_ENTRY;
     }
-
     return BOOT_SUCCESS;
 }
 
-/**
- * @brief TODO: [x] Lập trình quy trình chuyển quyền kiểm soát (Jump to App).
- *        - Cập nhật SCB->VTOR = appBaseAddr.
- *        - Đặt lại Main Stack Pointer = initialMsp.
- *        - Thực thi hàm nhảy thông qua con trỏ hàm Reset_Handler.
- */
+/* TODO: [2] Di dời SCB->VTOR, __set_MSP() và gọi Reset_Handler() */
 BootResult_t Jump_To_Application(uint32_t appBaseAddr, uint32_t initialMsp, AppResetHandler_t appHandler) {
     if (appHandler == NULL) {
         return BOOT_ERR_INVALID_ENTRY;
     }
-
-    /* 1. Di dời Vector Table */
     g_core.VTOR = appBaseAddr;
-
-    /* 2. Đặt lại con trỏ ngăn xếp chính (MSP) */
-    g_core.MSP = initialMsp;
-
-    /* 3. Bàn giao quyền điều khiển (Jump) */
+    g_core.MSP  = initialMsp;
     appHandler();
-
     return BOOT_SUCCESS;
 }
 
-int main(void) {
-    printf("====================================================================\n");
-    printf("     TEST HARNESS: ARM Cortex-M App Vector Jump & VTOR (MISRA C)    \n");
-    printf("====================================================================\n");
+static const char *prvBootErrName(BootResult_t r) {
+    switch (r) {
+        case BOOT_SUCCESS:            return "BOOT_SUCCESS";
+        case BOOT_ERR_INVALID_MSP:    return "ERR_INVALID_MSP (Out of SRAM!)";
+        case BOOT_ERR_INVALID_ENTRY:  return "ERR_INVALID_ENTRY";
+        case BOOT_ERR_NOT_THUMB:      return "ERR_NOT_THUMB (UsageFault INVSTATE!)";
+        case BOOT_ERR_VTOR_ALIGNMENT: return "ERR_VTOR_ALIGNMENT (Not 512B aligned!)";
+        default:                      return "UNKNOWN";
+    }
+}
 
+int main(void) {
+    printf("================================================================================\n");
+    printf("   BÀI TẬP 17.1: BOOTLOADER VECTOR TABLE RELOCATION (VTOR) & JUMP TO RTOS       \n");
+    printf("================================================================================\n");
     Core_Reset();
 
-    uint32_t validAppAddr   = 0x08020000U;
-    uint32_t validMsp       = 0x2001FFFCU;
-    /* Địa chỉ Reset_Handler giả lập: code tại 0x08020100 -> con trỏ hàm có Thumb bit = 0x08020101 */
-    uint32_t validHandlerRaw = 0x08020101U;
+    uint32_t validAppAddr    = 0x08020000U;
+    uint32_t validMsp        = 0x2001FFFCU;
+    uint32_t validHandlerRaw = 0x08020101U; /* Code tại 0x08020100 + Thumb bit 1 */
 
-    /* 1. Kiểm tra vector table chuẩn */
-    BootResult_t checkOk = Validate_App_Vector_Table(validAppAddr, validMsp, validHandlerRaw);
-    assert(checkOk == BOOT_SUCCESS);
-    printf("[PASS] Valid Application Vector Table approved\n");
+    printf("[FLASH VECTOR TABLE CỦA ỨNG DỤNG RTOS @ 0x%08X]:\n", validAppAddr);
+    printf("  +0x00 | Initial MSP      : 0x%08X (Nằm trong SRAM 0x20000000..0x20020000)\n", validMsp);
+    printf("  +0x04 | Reset_Handler    : 0x%08X (Bit[0] Thumb T=%u | Code=0x%08X)\n",
+           validHandlerRaw, validHandlerRaw & 1U, validHandlerRaw & ~1U);
+    printf("  Bootloader Initial State : SCB->VTOR=0x%08X | MSP=0x%08X\n\n", g_core.VTOR, g_core.MSP);
 
-    /* 2. Kiểm tra phát hiện lỗi thiếu Thumb bit */
-    uint32_t badThumbHandler = 0x08020100U; /* Bit 0 = 0 (ARM mode -> Lỗi trên Cortex-M) */
-    assert(Validate_App_Vector_Table(validAppAddr, validMsp, badThumbHandler) == BOOT_ERR_NOT_THUMB);
-    printf("[PASS] UsageFault avoided: Missing Thumb bit correctly trapped\n");
+    BootResult_t rOk   = Validate_App_Vector_Table(validAppAddr, validMsp, validHandlerRaw);
+    BootResult_t rArm  = Validate_App_Vector_Table(validAppAddr, validMsp, 0x08020100U);
+    BootResult_t rMsp  = Validate_App_Vector_Table(validAppAddr, 0x10000000U, validHandlerRaw);
+    BootResult_t rVtor = Validate_App_Vector_Table(0x08020040U,  validMsp, validHandlerRaw);
 
-    /* 3. Kiểm tra phát hiện MSP nằm ngoài RAM */
-    uint32_t badMsp = 0x10000000U;
-    assert(Validate_App_Vector_Table(validAppAddr, badMsp, validHandlerRaw) == BOOT_ERR_INVALID_MSP);
-    printf("[PASS] Invalid Stack Pointer (Out of RAM bounds) trapped\n");
+    printf("[KIỂM ĐỊNH CÁC BẪY KHỞI ĐỘNG]:\n");
+    printf("  1. Vector chuẩn RTOS App        -> %s\n", prvBootErrName(rOk));
+    printf("  2. Reset_Handler thiếu bit T    -> %s\n", prvBootErrName(rArm));
+    printf("  3. MSP trỏ ra ngoài RAM         -> %s\n", prvBootErrName(rMsp));
+    printf("  4. VTOR lệch biên 512 bytes     -> %s\n\n", prvBootErrName(rVtor));
 
-    /* 4. Kiểm tra phát hiện lỗi lệch căn chỉnh VTOR */
-    uint32_t unalignedAppAddr = 0x08020040U; /* Không chia hết cho 512 */
-    assert(Validate_App_Vector_Table(unalignedAppAddr, validMsp, validHandlerRaw) == BOOT_ERR_VTOR_ALIGNMENT);
-    printf("[PASS] VTOR alignment requirement (512-byte boundary) enforced\n");
+    assert(rOk == BOOT_SUCCESS && rArm == BOOT_ERR_NOT_THUMB &&
+           rMsp == BOOT_ERR_INVALID_MSP && rVtor == BOOT_ERR_VTOR_ALIGNMENT);
 
-    /* 5. Thực hiện cú nhảy hoàn chỉnh và kiểm tra cập nhật thanh ghi lõi */
     BootResult_t jumpRes = Jump_To_Application(validAppAddr, validMsp, Simulated_App_Reset_Handler);
-    assert(jumpRes == BOOT_SUCCESS);
-    assert(g_core.VTOR == validAppAddr);
-    assert(g_core.MSP == validMsp);
-    assert(g_core.appExecuted == true);
+    assert(jumpRes == BOOT_SUCCESS && g_core.VTOR == validAppAddr && g_core.MSP == validMsp && g_core.appExecuted);
 
-    printf("[PASS] Complete Jump Sequence executed: SCB->VTOR = 0x%08X, MSP = 0x%08X, App is running!\n",
-           (unsigned int)g_core.VTOR, (unsigned int)g_core.MSP);
+    printf("[CHUYỂN QUYỀN ĐIỀU KHIỂN THÀNH CÔNG]:\n");
+    printf("  SCB->VTOR : 0x08000000 (Bootloader)  ===>  0x%08X (RTOS App Vectors)\n", g_core.VTOR);
+    printf("  MSP       : 0x20001000 (Bootloader)  ===>  0x%08X (RTOS Clean Stack)\n", g_core.MSP);
+    printf("  Trạng thái: FreeRTOS vTaskStartScheduler() đang thực thi!\n\n");
 
-    printf("\n>>> [TEST PASSED] bt_17_1_vtor_app_vector_jump completed successfully.\n");
+    printf(">>> [TEST PASSED] bt_17_1_vtor_app_vector_jump completed successfully.\n");
     return 0;
 }

@@ -153,6 +153,27 @@ int main(void) {
            (stInvalid == DMA_ERR_INVALID_PARAM) ? "DMA_ERR_INVALID_PARAM" : "KHÁC");
     assert(stInvalid == DMA_ERR_INVALID_PARAM);
 
+    printf("\n[BẢN ĐỒ MA TRẬN CẤP PHÁT DMA STREAM (DMA1 & DMA2 — 8 Streams/Ctrl)]:\n");
+    printf("  Stream | DMA1 Controller        | DMA2 Controller\n");
+    printf("  --------------------------------------------------------------\n");
+    for (uint8_t s = 0U; s < 8U; s++) {
+        const DmaStreamSlot_t *d1 = &dmaTable.slots[0][s];
+        const DmaStreamSlot_t *d2 = &dmaTable.slots[1][s];
+        char buf1[32], buf2[32];
+        if (d1->bIsAllocated) {
+            snprintf(buf1, sizeof(buf1), "%s (Ch%u)", d1->pcOwnerName, d1->ucChannel);
+        } else {
+            snprintf(buf1, sizeof(buf1), "[FREE]");
+        }
+        if (d2->bIsAllocated) {
+            snprintf(buf2, sizeof(buf2), "%s (Ch%u)", d2->pcOwnerName, d2->ucChannel);
+        } else {
+            snprintf(buf2, sizeof(buf2), "[FREE]");
+        }
+        printf("    #%u   | %-22s | %-22s\n", s, buf1, buf2);
+    }
+    printf("  --------------------------------------------------------------\n");
+
     printf("\n>>> [TEST PASSED] Cơ chế phát hiện xung đột DMA ma trận hoạt động chính xác 100%%!\n");
     return 0;
 }

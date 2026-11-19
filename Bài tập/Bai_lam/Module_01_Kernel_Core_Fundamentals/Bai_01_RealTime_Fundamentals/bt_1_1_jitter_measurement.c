@@ -8,20 +8,11 @@
  * MỤC TIÊU:
  *   1. Hiểu bản chất định lượng của Jitter trong hệ thống thời gian thực.
  *   2. Đo lường sai số thời gian thực tế so với chu kỳ kỳ vọng lý thuyết.
- *   3. Nắm vững cách RTOS giảm thiểu Jitter so với vòng lặp Super Loop.
+ *   3. Phân tích trục thời gian thực thi (Timing Trace) giữa Super Loop & RTOS.
  *
- * YÊU CẦU KỸ THUẬT:
- *   1. Xây dựng cấu trúc `JitterStats_t` quản lý thống kê Jitter.
- *   2. Cài đặt hàm `Jitter_Init()`, `Jitter_Record()`, `Jitter_GetAverage()`.
- *   3. Kiểm tra con trỏ NULL theo Bouncer Pattern, tuân thủ MISRA C:2012.
- *
- * HƯỚNG DẪN BIÊN DỊCH & CHẠY:
- *   Windows (PowerShell):
- *     gcc -Wall -Wextra -std=c11 bt_1_1_jitter_measurement.c -o bt_1_1_jitter_measurement.exe
- *     .\bt_1_1_jitter_measurement.exe
- *   Linux / macOS:
- *     gcc -Wall -Wextra -std=c11 bt_1_1_jitter_measurement.c -o bt_1_1_jitter_measurement
- *     ./bt_1_1_jitter_measurement
+ * HƯỚNG DẪN BIÊN DỊCH & CHẠY TRÊN LINUX WSL:
+ *   make run-bt_1_1_jitter_measurement   (tại Bai_01_RealTime_Fundamentals/)
+ *   hoặc: gcc -Wall -Wextra -std=c11 bt_1_1_jitter_measurement.c -o bt_1_1 && ./bt_1_1
  * ============================================================================
  */
 
@@ -30,7 +21,7 @@
 #include <stdbool.h>
 #include <stdlib.h>
 
-#define SAMPLE_COUNT_TEST   10U
+#define SAMPLE_COUNT_TEST   6U
 
 typedef struct {
     uint32_t expected_period_us;
@@ -78,47 +69,89 @@ uint32_t Jitter_GetAverage(const JitterStats_t *p_stats) {
     return (uint32_t)(p_stats->total_jitter_us / (uint64_t)p_stats->sample_count);
 }
 
+static void Print_JitterBar(uint32_t jitter_us, uint32_t scale_us_per_char) {
+    uint32_t blocks = (jitter_us == 0U) ? 0U : ((jitter_us + scale_us_per_char - 1U) / scale_us_per_char);
+    if (blocks > 20U) {
+        blocks = 20U;
+    }
+    printf("|");
+    for (uint32_t i = 0U; i < 20U; i++) {
+        printf("%s", (i < blocks) ? "#" : " ");
+    }
+    printf("|");
+}
+
 /* ============================================================================
- * HÀM MAIN: TEST HARNESS TỰ ĐỘNG
+ * HÀM MAIN: TEST HARNESS TỰ ĐỘNG KÈM TRACE TIMELINE CHI TIẾT
  * ============================================================================
  */
 int main(void) {
-    printf("=== BÀI TẬP 1.1: ĐO LƯỜNG VÀ PHÂN TÍCH JITTER THỜI GIAN THỰC ===\n\n");
+    printf("================================================================================\n");
+    printf("   BÀI TẬP 1.1: PHÂN TÍCH ĐỊNH LƯỢNG JITTER — SUPER LOOP vs FREERTOS PREEMPT    \n");
+    printf("================================================================================\n");
+    printf("Bối cảnh: Motor/Sensor Control Task cần chu kỳ chuẩn T_target = 1000 us (1 kHz).\n");
+    printf("          Ngưỡng Hard Real-Time an toàn cho phép: Jitter_max <= 10 us.\n\n");
 
-    const uint32_t expected_period = 1000U; /* 1000 us = 1 ms */
+    const uint32_t expected_period = 1000U;
     JitterStats_t super_loop_stats;
     JitterStats_t rtos_timer_stats;
 
     Jitter_Init(&super_loop_stats, expected_period);
     Jitter_Init(&rtos_timer_stats, expected_period);
 
-    /* 1. Giả lập 5 mẫu thời gian thực tế của Super Loop (bị trễ do các task khác) */
-    uint32_t super_loop_samples[5] = {1050U, 1200U, 950U, 1400U, 1100U};
-    for (uint32_t i = 0U; i < 5U; i++) {
+    const uint32_t super_loop_samples[SAMPLE_COUNT_TEST] = {1050U, 1200U, 950U, 1400U, 1100U, 1320U};
+    const char    *super_loop_reasons[SAMPLE_COUNT_TEST] = {
+        "Cho UART printf() xong",
+        "LCD Refresh chiem CPU",
+        "Hàm con chay som bat thuong",
+        "SD Card SPI busy wait!",
+        "ADC polling delay",
+        "I2C timeout block loop"
+    };
+    const uint32_t rtos_samples[SAMPLE_COUNT_TEST] = {1001U, 999U, 1002U, 1000U, 1001U, 1000U};
+
+    printf("%-6s | %-10s | %-18s | %-18s | %-22s\n",
+           "Mẫu", "Mục tiêu", "Super Loop (Delta)", "RTOS Preempt (Delta)", "Biểu đồ Jitter (SL)");
+    printf("--------------------------------------------------------------------------------\n");
+
+    for (uint32_t i = 0U; i < SAMPLE_COUNT_TEST; i++) {
         Jitter_Record(&super_loop_stats, super_loop_samples[i]);
-    }
-
-    /* 2. Giả lập 5 mẫu thời gian thực tế của RTOS (Tiếm quyền chính xác) */
-    uint32_t rtos_samples[5] = {1001U, 999U, 1002U, 1000U, 1001U};
-    for (uint32_t i = 0U; i < 5U; i++) {
         Jitter_Record(&rtos_timer_stats, rtos_samples[i]);
+
+        uint32_t j_sl = (super_loop_samples[i] >= expected_period) ?
+                        (super_loop_samples[i] - expected_period) : (expected_period - super_loop_samples[i]);
+        uint32_t j_rtos = (rtos_samples[i] >= expected_period) ?
+                          (rtos_samples[i] - expected_period) : (expected_period - rtos_samples[i]);
+
+        printf("  #%-3u | %4u us    | %4u us (+/-%3u us) | %4u us (+/-%3u us)  | ",
+               i + 1U, expected_period,
+               super_loop_samples[i], j_sl,
+               rtos_samples[i], j_rtos);
+        Print_JitterBar(j_sl, 20U);
+        printf(" (%s)\n", super_loop_reasons[i]);
     }
+    printf("--------------------------------------------------------------------------------\n\n");
 
-    printf("[1] KẾT QUẢ MÔ HÌNH SUPER LOOP:\n");
-    printf("    - Chu kỳ kỳ vọng:  %u us\n", super_loop_stats.expected_period_us);
-    printf("    - Jitter lớn nhất: %u us\n", super_loop_stats.max_jitter_us);
-    printf("    - Jitter trung bình: %u us\n\n", Jitter_GetAverage(&super_loop_stats));
+    uint32_t avg_sl   = Jitter_GetAverage(&super_loop_stats);
+    uint32_t avg_rtos = Jitter_GetAverage(&rtos_timer_stats);
 
-    printf("[2] KẾT QUẢ MÔ HÌNH RTOS TIMER:\n");
-    printf("    - Chu kỳ kỳ vọng:  %u us\n", rtos_timer_stats.expected_period_us);
-    printf("    - Jitter lớn nhất: %u us\n", rtos_timer_stats.max_jitter_us);
-    printf("    - Jitter trung bình: %u us\n\n", Jitter_GetAverage(&rtos_timer_stats));
+    printf("[TỔNG KẾT SO SÁNH KIẾN TRÚC]\n");
+    printf("  1. Super Loop (Bare-Metal while(1)):\n");
+    printf("     - Jitter Lớn Nhất (Max) : %4u us  --> [VI PHẠM HARD REAL-TIME!]\n", super_loop_stats.max_jitter_us);
+    printf("     - Jitter Trung Bình (Avg): %4u us  (Lệch %.1f%% chu kỳ)\n",
+           avg_sl, (double)avg_sl * 100.0 / (double)expected_period);
+    printf("  2. FreeRTOS Preemptive Kernel (PendSV + SysTick + Task Prio cao):\n");
+    printf("     - Jitter Lớn Nhất (Max) : %4u us  --> [ĐẠT CHUẨN <= 10 us]\n", rtos_timer_stats.max_jitter_us);
+    printf("     - Jitter Trung Bình (Avg): %4u us  (Lệch %.2f%% chu kỳ)\n",
+           avg_rtos, (double)avg_rtos * 100.0 / (double)expected_period);
+    printf("  -> Cải thiện độ ổn định nhịp: Giảm %ux Jitter tối đa!\n\n",
+           super_loop_stats.max_jitter_us / (rtos_timer_stats.max_jitter_us ? rtos_timer_stats.max_jitter_us : 1U));
 
-    /* Kiểm chứng kết quả chuẩn */
     if ((super_loop_stats.max_jitter_us >= 400U) && (rtos_timer_stats.max_jitter_us <= 2U)) {
         printf(">>> [TEST PASSED] RTOS triệt tiêu Jitter vượt trội so với Super Loop!\n");
     } else {
-        printf(">>> [TEST FAILED] Kết quả tính toán Jitter chưa chính xác!\n");
+        printf(">>> [TEST FAILED] Sai lệch kết quả đo Jitter!\n");
+        return 1;
     }
 
     return 0;

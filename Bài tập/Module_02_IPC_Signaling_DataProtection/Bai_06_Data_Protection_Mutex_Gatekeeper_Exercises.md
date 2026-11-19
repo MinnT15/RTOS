@@ -471,3 +471,29 @@ bool Mock_RecursiveMutex_Give(MockRecursiveMutex_t *p_mutex, uint32_t calling_ta
   1. Xây dựng cấu trúc hàng đợi `LogMessageQueue_t` tiếp nhận các chuỗi log tối đa 32 ký tự.
   2. Viết hàm giả lập `Mock_UART_Gatekeeper_Step()` mô phỏng việc Gatekeeper Task liên tục đọc Queue và in ra màn hình.
   3. Chứng minh: Ngắt ISR có thể gọi hàm đẩy log vào Queue một cách an toàn mà không cần xin khóa Mutex.
+
+---
+
+## 🧭 HƯỚNG DẪN BẮT ĐẦU THỰC HÀNH TRÊN LINUX WSL
+1. Làm toàn bộ phần trắc nghiệm & phân tích tình huống trong tài liệu này trước khi viết code.
+2. Từ thư mục gốc `Bài tập/` trên máy ảo Linux WSL Ubuntu, biên dịch và chạy toàn bộ các bài lab của bài học này bằng lệnh:
+   ```bash
+   # Kiểm tra nhanh môi trường (lần đầu)
+   make check-env
+
+   # Biên dịch & chạy chi tiết kèm sơ đồ/bảng log trực quan trên terminal
+   make run-bai06
+
+   # Chạy kèm AddressSanitizer & UBSan để phát hiện lỗi bộ nhớ/UB
+   make MODE=asan run-bai06
+
+   # Hoặc kiểm tra từng bài riêng trong thư mục Bai_lam/Module_02_IPC_Signaling_DataProtection/Bai_06_Data_Protection_Mutex_Gatekeeper
+   cd "Bai_lam/Module_02_IPC_Signaling_DataProtection/Bai_06_Data_Protection_Mutex_Gatekeeper"
+   make run
+   make valgrind
+   ```
+3. Các file mã nguồn cần hoàn thiện:
+   - `bt_6_1_priority_inversion_repro.c`
+   - `bt_6_2_recursive_mutex_demo.c`
+   - `bt_6_3_gatekeeper_uart_task.c`
+4. Đảm bảo toàn bộ các bài đọc log phân tích đầy đủ và kết thúc với dòng `>>> [TEST PASSED]`.

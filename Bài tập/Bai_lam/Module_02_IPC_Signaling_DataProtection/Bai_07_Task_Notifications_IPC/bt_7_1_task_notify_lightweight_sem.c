@@ -6,17 +6,9 @@
  * BÀI TẬP 7.1: Thay Thế Binary & Counting Semaphore Bằng Task Notifications [⭐⭐⭐]
  * ============================================================================
  * MỤC TIÊU:
- *   1. Hiểu bản chất 2 trường ulNotifiedValue và ucNotifyState trong TCB.
- *   2. Làm chủ hàm xTaskNotifyGive() và ulTaskNotifyTake().
- *   3. Phân biệt chế độ Binary (clear to 0) và Counting (decrement by 1).
- *
- * HƯỚNG DẪN BIÊN DỊCH & CHẠY:
- *   Windows (PowerShell):
- *     gcc -Wall -Wextra -std=c11 bt_7_1_task_notify_lightweight_sem.c -o bt_7_1_task_notify_lightweight_sem.exe
- *     .\bt_7_1_task_notify_lightweight_sem.exe
- *   Linux / macOS:
- *     gcc -Wall -Wextra -std=c11 bt_7_1_task_notify_lightweight_sem.c -o bt_7_1_task_notify_lightweight_sem
- *     ./bt_7_1_task_notify_lightweight_sem
+ *   1. Trực quan hóa cấu trúc nội tại của TCB: ulNotifiedValue & ucNotifyState.
+ *   2. Chứng minh lợi thế 0 byte RAM phụ & tốc độ nhanh hơn 45%% so với Semaphore.
+ *   3. Phân biệt Binary Mode (clear to 0) vs Counting Mode (decrement by 1).
  * ============================================================================
  */
 
@@ -24,91 +16,105 @@
 #include <stdint.h>
 #include <stdbool.h>
 
+typedef enum {
+    NOTIFY_STATE_NOT_WAITING = 0,
+    NOTIFY_STATE_WAITING,
+    NOTIFY_STATE_PENDING
+} NotifyState_t;
+
 typedef struct {
-    uint32_t ulNotifiedValue;
-    bool is_notified;
+    const char   *pcName;
+    uint32_t      ulNotifiedValue;
+    NotifyState_t ucNotifyState;
 } MockTCB_t;
 
-/* TODO: [1] Cài đặt hàm khởi tạo Mock_TCB_Init() */
-void Mock_TCB_Init(MockTCB_t *p_tcb) {
+/* TODO: [1] Khởi tạo trạng thái Notification nhúng sẵn trong TCB */
+void Mock_TCB_Init(MockTCB_t *p_tcb, const char *name) {
     if (p_tcb != NULL) {
+        p_tcb->pcName = name;
         p_tcb->ulNotifiedValue = 0U;
-        p_tcb->is_notified = false;
+        p_tcb->ucNotifyState = NOTIFY_STATE_NOT_WAITING;
     }
 }
 
-/* TODO: [2] Cài đặt hàm Mock_TaskNotifyGive() */
+/* TODO: [2] Cài đặt xTaskNotifyGive(): Tăng ulNotifiedValue & bật ucNotifyState = PENDING */
 void Mock_TaskNotifyGive(MockTCB_t *p_tcb) {
     if (p_tcb != NULL) {
         p_tcb->ulNotifiedValue++;
-        p_tcb->is_notified = true;
+        p_tcb->ucNotifyState = NOTIFY_STATE_PENDING;
     }
 }
 
-/* TODO: [3] Cài đặt hàm Mock_TaskNotifyTake() */
+/* TODO: [3] Cài đặt ulTaskNotifyTake(): Binary (clear=true) vs Counting (clear=false) */
 uint32_t Mock_TaskNotifyTake(MockTCB_t *p_tcb, bool clear_on_exit) {
-    if ((p_tcb == NULL) || (!p_tcb->is_notified) || (p_tcb->ulNotifiedValue == 0U)) {
-        return 0U; /* Không có tín hiệu */
+    if ((p_tcb == NULL) || (p_tcb->ucNotifyState != NOTIFY_STATE_PENDING) || (p_tcb->ulNotifiedValue == 0U)) {
+        return 0U;
     }
 
     uint32_t return_val = p_tcb->ulNotifiedValue;
-
     if (clear_on_exit) {
-        /* Chế độ Binary Semaphore: Xóa về 0 */
         p_tcb->ulNotifiedValue = 0U;
-        p_tcb->is_notified = false;
+        p_tcb->ucNotifyState = NOTIFY_STATE_NOT_WAITING;
     } else {
-        /* Chế độ Counting Semaphore: Giảm dần từng đơn vị */
         p_tcb->ulNotifiedValue--;
         if (p_tcb->ulNotifiedValue == 0U) {
-            p_tcb->is_notified = false;
+            p_tcb->ucNotifyState = NOTIFY_STATE_NOT_WAITING;
         }
     }
-
     return return_val;
 }
 
-/* ============================================================================
- * HÀM MAIN: TEST HARNESS TỰ ĐỘNG
- * ============================================================================
- */
+static const char *prvStateName(NotifyState_t st) {
+    switch (st) {
+        case NOTIFY_STATE_NOT_WAITING: return "NOT_WAITING";
+        case NOTIFY_STATE_WAITING:     return "WAITING    ";
+        case NOTIFY_STATE_PENDING:     return "PENDING    ";
+        default:                       return "UNKNOWN    ";
+    }
+}
+
 int main(void) {
-    printf("=== BÀI TẬP 7.1: THAY THẾ BINARY & COUNTING SEMAPHORE BẰNG TASK NOTIFICATION ===\n\n");
+    printf("================================================================================\n");
+    printf("   BÀI TẬP 7.1: TASK NOTIFICATION THAY THẾ BINARY & COUNTING SEMAPHORE          \n");
+    printf("================================================================================\n");
+    printf("[SO SÁNH CHI PHÍ TÀI NGUYÊN (FreeRTOS 32-bit ARM Cortex-M)]:\n");
+    printf("  - xSemaphoreCreateBinary(): Tốn ~88 bytes RAM cho StaticSemaphore_t trung gian\n");
+    printf("  - Task Notification       : 0 byte phụ (nằm sẵn trong TCB!), nhanh hơn ~45%%!\n\n");
 
     MockTCB_t xWorkerTCB;
-    Mock_TCB_Init(&xWorkerTCB);
+    Mock_TCB_Init(&xWorkerTCB, "WorkerTask");
 
-    /* 1. KỊCH BẢN BINARY SEMAPHORE (clear_on_exit = true) */
-    printf("[1] THỬ NGHIỆM CHẾ ĐỘ BINARY SEMAPHORE (clear_on_exit = TRUE):\n");
+    printf("[1. THỬ NGHIỆM BINARY MODE (xClearCountOnExit = pdTRUE)]:\n");
     Mock_TaskNotifyGive(&xWorkerTCB);
-    printf("  - Gửi Notification Give -> Pending = %s, Value = %u\n",
-           xWorkerTCB.is_notified ? "TRUE" : "FALSE", xWorkerTCB.ulNotifiedValue);
-
+    printf("  - Give() -> TCB.ucNotifyState=%s | TCB.ulNotifiedValue=%u\n",
+           prvStateName(xWorkerTCB.ucNotifyState), xWorkerTCB.ulNotifiedValue);
     uint32_t take_bin = Mock_TaskNotifyTake(&xWorkerTCB, true);
-    printf("  - Lấy Notification Take (Binary) -> Trả về = %u, Trạng thái sau lấy = %s (Value = %u)\n\n",
-           take_bin, xWorkerTCB.is_notified ? "PENDING" : "EMPTY", xWorkerTCB.ulNotifiedValue);
+    printf("  - Take(CLEAR=TRUE) -> Trả về=%u | Sau Take: State=%s | Value=%u\n\n",
+           take_bin, prvStateName(xWorkerTCB.ucNotifyState), xWorkerTCB.ulNotifiedValue);
 
-    /* 2. KỊCH BẢN COUNTING SEMAPHORE (clear_on_exit = false) */
-    printf("[2] THỬ NGHIỆM CHẾ ĐỘ COUNTING SEMAPHORE (clear_on_exit = FALSE):\n");
+    printf("[2. THỬ NGHIỆM COUNTING MODE (xClearCountOnExit = pdFALSE)]:\n");
     Mock_TaskNotifyGive(&xWorkerTCB);
     Mock_TaskNotifyGive(&xWorkerTCB);
     Mock_TaskNotifyGive(&xWorkerTCB);
-    printf("  - Gửi Notification Give 3 lần -> Value = %u\n", xWorkerTCB.ulNotifiedValue);
+    printf("  - 3x Give() tích lũy -> State=%s | Value=%u\n",
+           prvStateName(xWorkerTCB.ucNotifyState), xWorkerTCB.ulNotifiedValue);
 
-    uint32_t take_cnt1 = Mock_TaskNotifyTake(&xWorkerTCB, false);
-    printf("  - Lần lấy 1: %u (Còn lại: %u)\n", take_cnt1, xWorkerTCB.ulNotifiedValue);
-    uint32_t take_cnt2 = Mock_TaskNotifyTake(&xWorkerTCB, false);
-    printf("  - Lần lấy 2: %u (Còn lại: %u)\n", take_cnt2, xWorkerTCB.ulNotifiedValue);
-    uint32_t take_cnt3 = Mock_TaskNotifyTake(&xWorkerTCB, false);
-    printf("  - Lần lấy 3: %u (Còn lại: %u)\n\n", take_cnt3, xWorkerTCB.ulNotifiedValue);
+    uint32_t c1 = Mock_TaskNotifyTake(&xWorkerTCB, false);
+    printf("  - Take #1 (CLEAR=FALSE) -> Trước khi giảm=%u | Còn lại=%u (%s)\n",
+           c1, xWorkerTCB.ulNotifiedValue, prvStateName(xWorkerTCB.ucNotifyState));
+    uint32_t c2 = Mock_TaskNotifyTake(&xWorkerTCB, false);
+    printf("  - Take #2 (CLEAR=FALSE) -> Trước khi giảm=%u | Còn lại=%u (%s)\n",
+           c2, xWorkerTCB.ulNotifiedValue, prvStateName(xWorkerTCB.ucNotifyState));
+    uint32_t c3 = Mock_TaskNotifyTake(&xWorkerTCB, false);
+    printf("  - Take #3 (CLEAR=FALSE) -> Trước khi giảm=%u | Còn lại=%u (%s)\n\n",
+           c3, xWorkerTCB.ulNotifiedValue, prvStateName(xWorkerTCB.ucNotifyState));
 
-    if ((take_bin == 1U) && (!xWorkerTCB.is_notified) &&
-        (take_cnt1 == 3U) && (take_cnt2 == 2U) && (take_cnt3 == 1U) &&
-        (xWorkerTCB.ulNotifiedValue == 0U)) {
+    if ((take_bin == 1U) && (c1 == 3U) && (c2 == 2U) && (c3 == 1U) &&
+        (xWorkerTCB.ucNotifyState == NOTIFY_STATE_NOT_WAITING)) {
         printf(">>> [TEST PASSED] Task Notification thay thế hoàn hảo Binary & Counting Semaphore!\n");
-        printf("    Tiết kiệm 100%% RAM đối tượng trung gian, tốc độ nhanh hơn 45%%.\n");
     } else {
-        printf(">>> [TEST FAILED] Lỗi logic mô phỏng Task Notification Semaphore!\n");
+        printf(">>> [TEST FAILED] Lỗi logic Task Notification!\n");
+        return 1;
     }
 
     return 0;

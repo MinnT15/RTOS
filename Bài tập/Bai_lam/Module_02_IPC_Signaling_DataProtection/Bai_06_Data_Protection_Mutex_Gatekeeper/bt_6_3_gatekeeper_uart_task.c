@@ -6,17 +6,9 @@
  * BÀI TẬP 6.3: Thiết Kế Kiến Trúc Không Mutex Bằng Gatekeeper Task [⭐⭐⭐]
  * ============================================================================
  * MỤC TIÊU:
- *   1. Làm chủ mô hình kiến trúc Mutex-Free bằng Gatekeeper Task.
- *   2. Tuần tự hóa quyền truy cập ngoại vi (UART/Display) qua Message Queue.
- *   3. Cho phép hàm ngắt ISR in log an toàn mà Mutex không thể làm được.
- *
- * HƯỚNG DẪN BIÊN DỊCH & CHẠY:
- *   Windows (PowerShell):
- *     gcc -Wall -Wextra -std=c11 bt_6_3_gatekeeper_uart_task.c -o bt_6_3_gatekeeper_uart_task.exe
- *     .\bt_6_3_gatekeeper_uart_task.exe
- *   Linux / macOS:
- *     gcc -Wall -Wextra -std=c11 bt_6_3_gatekeeper_uart_task.c -o bt_6_3_gatekeeper_uart_task
- *     ./bt_6_3_gatekeeper_uart_task
+ *   1. So sánh trực tiếp thảm họa xé chữ UART (Race Corruption) vs Gatekeeper Task.
+ *   2. Tuần tự hóa quyền truy cập ngoại vi qua Queue — 0 Mutex, 0 Deadlock.
+ *   3. Cho phép cả Ngắt phần cứng ISR gửi Log qua xQueueSendFromISR() an toàn.
  * ============================================================================
  */
 
@@ -29,9 +21,10 @@
 #define LOG_MSG_MAX_LEN     32U
 
 typedef struct {
-    char text[LOG_MSG_MAX_LEN];
+    char     text[LOG_MSG_MAX_LEN];
     uint32_t sender_id;
-    bool is_from_isr;
+    uint32_t timestamp_ms;
+    bool     is_from_isr;
 } LogMessage_t;
 
 typedef struct {
@@ -43,21 +36,19 @@ typedef struct {
 
 static LogQueue_t s_uart_log_queue;
 
-/* TODO: [1] Cài đặt hàm khởi tạo Gatekeeper Queue */
+/* TODO: [1] Khởi tạo Gatekeeper Queue */
 void Gatekeeper_Init(void) {
-    s_uart_log_queue.head = 0U;
-    s_uart_log_queue.tail = 0U;
-    s_uart_log_queue.count = 0U;
+    memset(&s_uart_log_queue, 0, sizeof(LogQueue_t));
 }
 
-/* TODO: [2] Cài đặt hàm gửi Log từ Task thông thường */
-bool Gatekeeper_SendLogFromTask(uint32_t task_id, const char *p_msg) {
+/* TODO: [2] Gửi Log từ Task bình thường (Non-ISR) */
+bool Gatekeeper_SendLogFromTask(uint32_t task_id, uint32_t ts_ms, const char *p_msg) {
     if ((p_msg == NULL) || (s_uart_log_queue.count >= LOG_QUEUE_MAX)) {
         return false;
     }
-
     LogMessage_t *p_slot = &s_uart_log_queue.queue[s_uart_log_queue.tail];
     p_slot->sender_id = task_id;
+    p_slot->timestamp_ms = ts_ms;
     p_slot->is_from_isr = false;
     strncpy(p_slot->text, p_msg, LOG_MSG_MAX_LEN - 1U);
     p_slot->text[LOG_MSG_MAX_LEN - 1U] = '\0';
@@ -67,14 +58,14 @@ bool Gatekeeper_SendLogFromTask(uint32_t task_id, const char *p_msg) {
     return true;
 }
 
-/* TODO: [3] Cài đặt hàm gửi Log an toàn từ trong ngắt ISR */
-bool Gatekeeper_SendLogFromISR(uint32_t isr_id, const char *p_msg) {
+/* TODO: [3] Gửi Log an toàn từ trong Ngắt phần cứng (xQueueSendFromISR) */
+bool Gatekeeper_SendLogFromISR(uint32_t isr_id, uint32_t ts_ms, const char *p_msg) {
     if ((p_msg == NULL) || (s_uart_log_queue.count >= LOG_QUEUE_MAX)) {
         return false;
     }
-
     LogMessage_t *p_slot = &s_uart_log_queue.queue[s_uart_log_queue.tail];
     p_slot->sender_id = isr_id;
+    p_slot->timestamp_ms = ts_ms;
     p_slot->is_from_isr = true;
     strncpy(p_slot->text, p_msg, LOG_MSG_MAX_LEN - 1U);
     p_slot->text[LOG_MSG_MAX_LEN - 1U] = '\0';
@@ -84,55 +75,53 @@ bool Gatekeeper_SendLogFromISR(uint32_t isr_id, const char *p_msg) {
     return true;
 }
 
-/* TODO: [4] Hàm Gatekeeper Task xử lý xả log tuần tự */
+/* TODO: [4] Duy nhất Gatekeeper Task rút từ Queue và đẩy ra UART TX phần cứng */
 bool Gatekeeper_ProcessNextLog(LogMessage_t *p_out_msg) {
     if ((p_out_msg == NULL) || (s_uart_log_queue.count == 0U)) {
         return false;
     }
-
     *p_out_msg = s_uart_log_queue.queue[s_uart_log_queue.head];
     s_uart_log_queue.head = (s_uart_log_queue.head + 1U) % LOG_QUEUE_MAX;
     s_uart_log_queue.count--;
     return true;
 }
 
-/* ============================================================================
- * HÀM MAIN: TEST HARNESS TỰ ĐỘNG
- * ============================================================================
- */
 int main(void) {
-    printf("=== BÀI TẬP 6.3: THIẾT KẾ GATEKEEPER TASK KHÔNG DÙNG MUTEX ===\n\n");
+    printf("================================================================================\n");
+    printf("   BÀI TẬP 6.3: KIẾN TRÚC GATEKEEPER TASK (MUTEX-FREE SERIALIZED UART)          \n");
+    printf("================================================================================\n");
+    printf("[1. HIỆN TRƯỢNG LỖI NẾU KHÔNG DÙNG GATEKEEPER (Multiple Tasks printf vào UART)]:\n");
+    printf("   - Task 10 đang in \"TEMP_READ...\" -> Bị Timer ISR & Task 20 cướp CPU giữa chừng!\n");
+    printf("   - Kết quả trên Terminal bị xé nát: \"TEMP_R[TIMER_EXPMOTOR_SPEED]EAD: 35.2 C\"\n");
+    printf("   - Nếu dùng Mutex thay thế? -> ISR KHÔNG ĐƯỢC LẤY MUTEX (Vi phạm configASSERT!)\n\n");
 
+    printf("[2. GIẢI PHÁP CHUẨN SENIOR: DUY NHẤT UART_GatekeeperTask SỞ HỮU CỔNG UART]:\n");
     Gatekeeper_Init();
 
-    /* 1. Task 1 (Sensors) gửi bản tin log */
-    Gatekeeper_SendLogFromTask(10U, "TEMP_READ: 35.2 C");
+    Gatekeeper_SendLogFromTask(10U, 1020U, "TEMP_READ: 35.2 C");
+    Gatekeeper_SendLogFromISR(99U,  1021U, "TIMER_EXPIRED_IRQ");
+    Gatekeeper_SendLogFromTask(20U, 1025U, "MOTOR_SPEED: 1200 RPM");
 
-    /* 2. Hàm ngắt phần cứng ISR Timer gửi bản tin log khẩn cấp */
-    Gatekeeper_SendLogFromISR(99U, "TIMER_EXPIRED_IRQ");
+    printf("   Hàng đợi Queue (Count = %u/%u):\n", s_uart_log_queue.count, LOG_QUEUE_MAX);
+    printf("   Idx | Time(ms) | Nguồn Gửi      | ID  | Dữ liệu xuất nguyên vẹn ra UART TX\n");
+    printf("   ----------------------------------------------------------------------------\n");
 
-    /* 3. Task 2 (Motor) gửi bản tin log */
-    Gatekeeper_SendLogFromTask(20U, "MOTOR_SPEED: 1200 RPM");
-
-    printf("--- DANH SÁCH BẢN TIN ĐƯỢC GATEKEEPER XẢ RA UART TUẦN TỰ ---\n");
     LogMessage_t rx_msg;
     uint32_t processed_count = 0U;
-
     while (Gatekeeper_ProcessNextLog(&rx_msg)) {
         processed_count++;
-        printf("  [%u] Nguồn: %-15s | ID: %2u | Nội dung: \"%s\"\n",
-               processed_count,
+        printf("    #%u | %6u   | %-14s | %-3u | \"%s\"\n",
+               processed_count, rx_msg.timestamp_ms,
                rx_msg.is_from_isr ? "HARDWARE_ISR" : "USER_TASK",
-               rx_msg.sender_id,
-               rx_msg.text);
+               rx_msg.sender_id, rx_msg.text);
     }
-    printf("-------------------------------------------------------------\n\n");
+    printf("   ----------------------------------------------------------------------------\n\n");
 
-    if (processed_count == 3U) {
-        printf(">>> [TEST PASSED] Gatekeeper Task tuần tự hóa truy cập và hỗ trợ ISR xuất sắc 100%%!\n");
-        printf("    Hệ thống hoàn toàn sạch bóng Mutex, triệt tiêu 100%% nguy cơ Deadlock.\n");
+    if (processed_count == 3U && s_uart_log_queue.count == 0U) {
+        printf(">>> [TEST PASSED] Gatekeeper Task tuần tự hóa & hỗ trợ ISR an toàn 100%%!\n");
     } else {
-        printf(">>> [TEST FAILED] Số lượng bản tin xử lý không khớp!\n");
+        printf(">>> [TEST FAILED] Lỗi hàng đợi Gatekeeper!\n");
+        return 1;
     }
 
     return 0;

@@ -7,21 +7,8 @@
  * ============================================================================
  * MỤC TIÊU:
  *   1. Làm chủ hệ thống tiền tố FreeRTOS: `v`, `x`, `pv`, `prv`, `ux`.
- *   2. Sử dụng đúng mã lỗi và trạng thái từ `projdefs.h` (`pdPASS`, `errQUEUE_FULL`).
+ *   2. Sử dụng đúng mã lỗi và trạng thái từ `projdefs.h` (`pdPASS`, `errQUEUE_FULL`, `pdFAIL`).
  *   3. Thiết kế hàm an toàn theo Bouncer Pattern và MISRA C:2012.
- *
- * YÊU CẦU KỸ THUẬT:
- *   1. Xây dựng cấu trúc `PacketBuffer_t` có dung lượng `PACKET_CAPACITY_MAX = 4U`.
- *   2. Cài đặt hàm private `prvCalculateSimpleChecksum()`.
- *   3. Cài đặt hàm khởi tạo `vPacketBufferInit()` và hàm nạp `xPacketBufferPush()`.
- *
- * HƯỚNG DẪN BIÊN DỊCH & CHẠY:
- *   Windows (PowerShell):
- *     gcc -Wall -Wextra -std=c11 bt_1_2_freertos_coding_style.c -o bt_1_2_freertos_coding_style.exe
- *     .\bt_1_2_freertos_coding_style.exe
- *   Linux / macOS:
- *     gcc -Wall -Wextra -std=c11 bt_1_2_freertos_coding_style.c -o bt_1_2_freertos_coding_style
- *     ./bt_1_2_freertos_coding_style
  * ============================================================================
  */
 
@@ -29,8 +16,7 @@
 #include <stdint.h>
 #include <stdbool.h>
 
-/* Mô phỏng các định nghĩa chuẩn trong FreeRTOS projdefs.h */
-typedef int32_t BaseType_t;
+typedef int32_t  BaseType_t;
 typedef uint32_t UBaseType_t;
 
 #define pdTRUE          ((BaseType_t) 1)
@@ -42,74 +28,95 @@ typedef uint32_t UBaseType_t;
 #define PACKET_CAPACITY_MAX  4U
 
 typedef struct {
-    uint32_t payload[PACKET_CAPACITY_MAX];
+    uint32_t    ulRawPayload[PACKET_CAPACITY_MAX];
+    uint32_t    ulStoredPayload[PACKET_CAPACITY_MAX];
     UBaseType_t uxCount;
 } PacketBuffer_t;
 
-/* TODO: [1] Cài đặt hàm private tính checksum đơn giản */
+/* TODO: [1] Cài đặt hàm private (tiền tố prv = static nội bộ file) tính checksum XOR */
 static uint32_t prvCalculateSimpleChecksum(uint32_t ulData) {
     return ulData ^ 0xA5A5A5A5U;
 }
 
-/* TODO: [2] Cài đặt hàm vPacketBufferInit() */
+/* TODO: [2] Cài đặt hàm void (tiền tố v) khởi tạo buffer */
 void vPacketBufferInit(PacketBuffer_t *pxBuffer) {
     if (pxBuffer != NULL) {
         pxBuffer->uxCount = 0U;
+        for (uint32_t i = 0U; i < PACKET_CAPACITY_MAX; i++) {
+            pxBuffer->ulRawPayload[i] = 0U;
+            pxBuffer->ulStoredPayload[i] = 0U;
+        }
     }
 }
 
-/* TODO: [3] Cài đặt hàm xPacketBufferPush() theo chuẩn mã lỗi projdefs.h */
+/* TODO: [3] Cài đặt hàm trả về BaseType_t (tiền tố x) đẩy dữ liệu theo chuẩn projdefs.h */
 BaseType_t xPacketBufferPush(PacketBuffer_t *pxBuffer, uint32_t ulData) {
     if (pxBuffer == NULL) {
-        return pdFAIL;
+        return pdFAIL; /* -1: Tham số con trỏ NULL bất hợp lệ */
     }
 
     if (pxBuffer->uxCount >= PACKET_CAPACITY_MAX) {
-        return errQUEUE_FULL;
+        return errQUEUE_FULL; /* 0: Bộ đệm đầy, không ghi đè tràn mảng */
     }
 
     uint32_t ulChecksum = prvCalculateSimpleChecksum(ulData);
-    pxBuffer->payload[pxBuffer->uxCount] = ulChecksum;
+    pxBuffer->ulRawPayload[pxBuffer->uxCount] = ulData;
+    pxBuffer->ulStoredPayload[pxBuffer->uxCount] = ulChecksum;
     pxBuffer->uxCount++;
 
-    return pdPASS;
+    return pdPASS; /* 1: Thành công */
 }
 
-/* ============================================================================
- * HÀM MAIN: TEST HARNESS TỰ ĐỘNG
- * ============================================================================
- */
+static const char *prvDecodeStatus(BaseType_t xCode) {
+    if (xCode == pdPASS)        { return "pdPASS (1)"; }
+    if (xCode == errQUEUE_FULL) { return "errQUEUE_FULL (0)"; }
+    if (xCode == pdFAIL)        { return "pdFAIL (-1)"; }
+    return "UNKNOWN";
+}
+
 int main(void) {
-    printf("=== BÀI TẬP 1.2: KIỂM CHỨNG FREERTOS CODING CONVENTION & MÃ LỖI ===\n\n");
+    printf("================================================================================\n");
+    printf("  BÀI TẬP 1.2: CHUẨN HÓA FREERTOS CODING CONVENTION & MÃ LỖI PROJDEFS.H         \n");
+    printf("================================================================================\n");
+    printf("[Quy ước tiền tố biến/hàm bắt buộc trong nhân FreeRTOS]:\n");
+    printf("  - x...   : Trả về BaseType_t / Handle (xPacketBufferPush, xQueueSend)\n");
+    printf("  - v...   : Trả về void (vPacketBufferInit, vTaskDelay)\n");
+    printf("  - ux...  : Số nguyên không dấu UBaseType_t (uxCount, uxPriority)\n");
+    printf("  - px...  : Con trỏ tới struct (pxBuffer -> Static/Struct pointer)\n");
+    printf("  - ul...  : uint32_t (unsigned long 32-bit)\n");
+    printf("  - prv... : Hàm static private phạm vi nội bộ file\n\n");
 
     PacketBuffer_t xTestBuffer;
     vPacketBufferInit(&xTestBuffer);
 
-    /* 1. Test trường hợp đẩy bình thường -> Phải trả về pdPASS */
-    BaseType_t xStatus1 = xPacketBufferPush(&xTestBuffer, 0x1111U);
-    BaseType_t xStatus2 = xPacketBufferPush(&xTestBuffer, 0x2222U);
-    BaseType_t xStatus3 = xPacketBufferPush(&xTestBuffer, 0x3333U);
-    BaseType_t xStatus4 = xPacketBufferPush(&xTestBuffer, 0x4444U);
-    (void)xStatus2;
-    (void)xStatus3;
+    const uint32_t ulInputs[6] = { 0x11110001U, 0x22220002U, 0x33330003U, 0x44440004U, 0x55550005U, 0x99990009U };
+    BaseType_t xResults[6];
 
-    printf("[Test 1] Đẩy 4 gói tin vào bộ đệm: Số lượng hiện tại = %u\n", xTestBuffer.uxCount);
+    printf("[TRACE THỰC THI TỪNG BƯỚC PUSH VÀO BỘ ĐỆM (Sức chứa: %u slots)]:\n", PACKET_CAPACITY_MAX);
+    printf("  Bước | Đầu vào (ulData) | Tham số pxBuffer | Kết quả trả về       | uxCount\n");
+    printf("  -----------------------------------------------------------------------------\n");
+    for (uint32_t i = 0U; i < 6U; i++) {
+        PacketBuffer_t *pxTarget = (i == 5U) ? NULL : &xTestBuffer;
+        xResults[i] = xPacketBufferPush(pxTarget, ulInputs[i]);
+        printf("   #%u  | 0x%08X       | %-16s | %-20s | %u / %u\n",
+               i + 1U, ulInputs[i],
+               (pxTarget == NULL) ? "NULL (Bẫy lỗi)" : "&xTestBuffer",
+               prvDecodeStatus(xResults[i]),
+               xTestBuffer.uxCount, PACKET_CAPACITY_MAX);
+    }
 
-    /* 2. Test trường hợp đầy bộ đệm -> Phải trả về errQUEUE_FULL */
-    BaseType_t xStatusOverflow = xPacketBufferPush(&xTestBuffer, 0x5555U);
-    printf("[Test 2] Đẩy gói thứ 5 khi bộ đệm đầy: Mã trả về = %d (kỳ vọng %d)\n",
-           xStatusOverflow, errQUEUE_FULL);
+    printf("\n[BỘ NHỚ NỘI BỘ BỘ ĐỆM SAU KHI NẠP (Checksum XOR 0xA5A5A5A5)]:\n");
+    for (uint32_t i = 0U; i < xTestBuffer.uxCount; i++) {
+        printf("  Slot[%u]: Raw=0x%08X  ^ 0xA5A5A5A5  ==>  Stored=0x%08X\n",
+               i, xTestBuffer.ulRawPayload[i], xTestBuffer.ulStoredPayload[i]);
+    }
 
-    /* 3. Test trường hợp con trỏ NULL -> Phải trả về pdFAIL */
-    BaseType_t xStatusNull = xPacketBufferPush(NULL, 0x9999U);
-    printf("[Test 3] Đẩy với con trỏ NULL: Mã trả về = %d (kỳ vọng %d)\n\n",
-           xStatusNull, pdFAIL);
-
-    if ((xStatus1 == pdPASS) && (xStatus4 == pdPASS) &&
-        (xStatusOverflow == errQUEUE_FULL) && (xStatusNull == pdFAIL)) {
-        printf(">>> [TEST PASSED] Cài đặt chuẩn FreeRTOS Naming và Error Handling 100%%!\n");
+    if ((xResults[0] == pdPASS) && (xResults[3] == pdPASS) &&
+        (xResults[4] == errQUEUE_FULL) && (xResults[5] == pdFAIL)) {
+        printf("\n>>> [TEST PASSED] Cài đặt chuẩn FreeRTOS Naming và Error Handling 100%%!\n");
     } else {
-        printf(">>> [TEST FAILED] Mã trả về chưa tuân thủ quy chuẩn!\n");
+        printf("\n>>> [TEST FAILED] Mã trả về chưa tuân thủ quy chuẩn!\n");
+        return 1;
     }
 
     return 0;

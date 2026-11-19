@@ -457,3 +457,29 @@ uint32_t Calculate_ProductionStackSize(uint32_t ulAllocatedWords, uint32_t ulHig
   1. Viết hàm mô phỏng `Simulate_RelativeDelayLoop()` thể hiện thời điểm đánh thức của 5 chu kỳ khi có thời gian tính toán $2\text{ ms}$ ngẫu nhiên.
   2. Viết hàm mô phỏng `Simulate_AbsoluteDelayUntilLoop()` thể hiện thời điểm đánh thức cố định ở các mốc $10\text{ ms}, 20\text{ ms}, 30\text{ ms}...$ bất chấp thời gian tính toán.
   3. In bảng so sánh trực quan sai số tích lũy của 2 phương pháp.
+
+---
+
+## 🧭 HƯỚNG DẪN BẮT ĐẦU THỰC HÀNH TRÊN LINUX WSL
+1. Làm toàn bộ phần trắc nghiệm & phân tích tình huống trong tài liệu này trước khi viết code.
+2. Từ thư mục gốc `Bài tập/` trên máy ảo Linux WSL Ubuntu, biên dịch và chạy toàn bộ các bài lab của bài học này bằng lệnh:
+   ```bash
+   # Kiểm tra nhanh môi trường (lần đầu)
+   make check-env
+
+   # Biên dịch & chạy chi tiết kèm sơ đồ/bảng log trực quan trên terminal
+   make run-bai02
+
+   # Chạy kèm AddressSanitizer & UBSan để phát hiện lỗi bộ nhớ/UB
+   make MODE=asan run-bai02
+
+   # Hoặc kiểm tra từng bài riêng trong thư mục Bai_lam/Module_01_Kernel_Core_Fundamentals/Bai_02_RTOS_Tasks
+   cd "Bai_lam/Module_01_Kernel_Core_Fundamentals/Bai_02_RTOS_Tasks"
+   make run
+   make valgrind
+   ```
+3. Các file mã nguồn cần hoàn thiện:
+   - `bt_2_1_static_task_creation.c`
+   - `bt_2_2_stack_watermark_stress.c`
+   - `bt_2_3_delay_drift_experiment.c`
+4. Đảm bảo toàn bộ các bài đọc log phân tích đầy đủ và kết thúc với dòng `>>> [TEST PASSED]`.

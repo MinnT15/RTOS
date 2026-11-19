@@ -3,89 +3,158 @@
  * KHÓA HỌC: FREERTOS ADVANCED
  * MODULE: Module_01_Kernel_Core_Fundamentals
  * CHUYÊN ĐỀ: Bai_04_Memory_Management
- * BÀI TẬP 4.2: Tái Hiện Hiện Tượng Phân Mảnh Của Heap_2 Dưới Tải Động [⭐⭐⭐]
+ * BÀI TẬP 4.2: Tái Hiện Cạm Bẫy Phân Mảnh Heap_2 vs Giải Pháp Heap_4 [⭐⭐⭐]
  * ============================================================================
  * MỤC TIÊU:
- *   1. Mô phỏng và chứng minh nhược điểm chí mạng của thuật toán Heap_2.
- *   2. Tái hiện lỗi "Out of Memory" giả tạo khi tổng RAM trống vẫn còn đủ
- *      nhưng không có khối đơn lẻ nào đủ lớn (External Fragmentation).
- *   3. Hiểu tại sao FreeRTOS không khuyến nghị dùng Heap_2 cho dự án mới.
- *
- * HƯỚNG DẪN BIÊN DỊCH & CHẠY:
- *   Windows (PowerShell):
- *     gcc -Wall -Wextra -std=c11 bt_4_2_heap2_fragmentation_trap.c -o bt_4_2_heap2_fragmentation_trap.exe
- *     .\bt_4_2_heap2_fragmentation_trap.exe
- *   Linux / macOS:
- *     gcc -Wall -Wextra -std=c11 bt_4_2_heap2_fragmentation_trap.c -o bt_4_2_heap2_fragmentation_trap
- *     ./bt_4_2_heap2_fragmentation_trap
+ *   1. Thực thi 2 bộ cấp phát cạnh nhau trên cùng chuỗi tải động:
+ *      - Heap_2: Tìm Best-Fit nhưng KHÔNG BAO GIỜ GỘP khi Free -> Chết OOM!
+ *      - Heap_4: Tự động gộp các khối trống kề cận -> Sống sót!
+ *   2. Trực quan hóa bản đồ khối nhớ phân mảnh (External Fragmentation).
  * ============================================================================
  */
 
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <string.h>
+
+#define MAX_BLOCKS 8U
 
 typedef struct {
-    uint32_t block_size;
-    bool is_free;
-} SimpleBlock_t;
+    uint32_t offset;
+    uint32_t size;
+    bool     is_free;
+} MemBlock_t;
 
-/* TODO: [1] Cài đặt hàm tính tổng dung lượng bộ nhớ trống còn lại */
-uint32_t Mock_Heap2_GetTotalFree(const SimpleBlock_t *blocks, uint32_t count) {
-    uint32_t total_free = 0U;
-    for (uint32_t i = 0U; i < count; i++) {
-        if (blocks[i].is_free) {
-            total_free += blocks[i].block_size;
-        }
-    }
-    return total_free;
+typedef struct {
+    MemBlock_t blocks[MAX_BLOCKS];
+    uint32_t   block_count;
+} AllocatorSim_t;
+
+static void Sim_Init(AllocatorSim_t *sim, uint32_t total_size) {
+    sim->blocks[0].offset = 0U;
+    sim->blocks[0].size = total_size;
+    sim->blocks[0].is_free = true;
+    sim->block_count = 1U;
 }
 
-/* TODO: [2] Cài đặt hàm tìm kiếm khối Best-Fit nhưng KHÔNG GỘP của Heap_2 */
-bool Mock_Heap2_CanAllocate(const SimpleBlock_t *blocks, uint32_t count, uint32_t requested) {
-    for (uint32_t i = 0U; i < count; i++) {
-        if (blocks[i].is_free && (blocks[i].block_size >= requested)) {
-            return true; /* Tìm thấy khối đơn lẻ đủ chứa */
+static int32_t Sim_Alloc(AllocatorSim_t *sim, uint32_t req_size, bool best_fit) {
+    int32_t chosen = -1;
+    for (uint32_t i = 0U; i < sim->block_count; i++) {
+        if (sim->blocks[i].is_free && (sim->blocks[i].size >= req_size)) {
+            if (!best_fit) {
+                chosen = (int32_t)i;
+                break; /* First-Fit */
+            }
+            if ((chosen == -1) || (sim->blocks[i].size < sim->blocks[chosen].size)) {
+                chosen = (int32_t)i; /* Best-Fit */
+            }
         }
     }
-    return false; /* THẤT BẠI: Dù tổng trống lớn nhưng bị phân mảnh! */
+    if (chosen == -1) {
+        return -1; /* OOM */
+    }
+
+    uint32_t leftover = sim->blocks[chosen].size - req_size;
+    if ((leftover > 0U) && (sim->block_count < MAX_BLOCKS)) {
+        for (uint32_t k = sim->block_count; k > (uint32_t)chosen + 1U; k--) {
+            sim->blocks[k] = sim->blocks[k - 1U];
+        }
+        sim->blocks[chosen + 1].offset  = sim->blocks[chosen].offset + req_size;
+        sim->blocks[chosen + 1].size    = leftover;
+        sim->blocks[chosen + 1].is_free = true;
+        sim->blocks[chosen].size        = req_size;
+        sim->block_count++;
+    }
+    sim->blocks[chosen].is_free = false;
+    return (int32_t)sim->blocks[chosen].offset;
 }
 
-/* ============================================================================
- * HÀM MAIN: TEST HARNESS TỰ ĐỘNG
- * ============================================================================
- */
+/* TODO: [1] Cài đặt hàm Free có bật/tắt Coalescing để so sánh Heap_2 vs Heap_4 */
+static void Sim_Free(AllocatorSim_t *sim, int32_t offset, bool enable_coalesce) {
+    for (uint32_t i = 0U; i < sim->block_count; i++) {
+        if ((int32_t)sim->blocks[i].offset == offset) {
+            sim->blocks[i].is_free = true;
+            break;
+        }
+    }
+    if (!enable_coalesce) {
+        return; /* Heap_2: Không gộp -> Phân mảnh vĩnh viễn! */
+    }
+
+    /* Heap_4: Gộp tất cả các cặp khối FREE nằm kề nhau */
+    uint32_t i = 0U;
+    while ((i + 1U) < sim->block_count) {
+        if (sim->blocks[i].is_free && sim->blocks[i + 1U].is_free) {
+            sim->blocks[i].size += sim->blocks[i + 1U].size;
+            for (uint32_t k = i + 1U; (k + 1U) < sim->block_count; k++) {
+                sim->blocks[k] = sim->blocks[k + 1U];
+            }
+            sim->block_count--;
+        } else {
+            i++;
+        }
+    }
+}
+
+static uint32_t Sim_GetTotalFree(const AllocatorSim_t *sim) {
+    uint32_t sum = 0U;
+    for (uint32_t i = 0U; i < sim->block_count; i++) {
+        if (sim->blocks[i].is_free) {
+            sum += sim->blocks[i].size;
+        }
+    }
+    return sum;
+}
+
+static void Print_Map(const char *label, const AllocatorSim_t *sim) {
+    printf("  %-18s: ", label);
+    for (uint32_t i = 0U; i < sim->block_count; i++) {
+        printf("[%uB:%s]", sim->blocks[i].size, sim->blocks[i].is_free ? "FREE" : "USED");
+    }
+    printf(" (Tổng trống = %uB)\n", Sim_GetTotalFree(sim));
+}
+
 int main(void) {
-    printf("=== BÀI TẬP 4.2: TÁI HIỆN CẠM BẪY PHÂN MẢNH BỘ NHỚ CỦA HEAP_2 ===\n\n");
+    printf("================================================================================\n");
+    printf("   BÀI TẬP 4.2: SO SÁNH PHÂN MẢNH HEAP_2 (NO COALESCE) vs HEAP_4 (COALESCE)     \n");
+    printf("================================================================================\n");
+    printf("Tổng Heap giả lập = 100 Bytes. Chuỗi thao tác: Alloc(20), Alloc(30), Alloc(50)\n");
+    printf("                                  -> Free(20), Free(30) -> Đòi Alloc(40B)\n\n");
 
-    /* Kịch bản: Bộ nhớ bị chia làm 4 khối sau một chuỗi alloc/free động */
-    /* Khối 0: 20 bytes (ĐANG RẢNH) */
-    /* Khối 1: 30 bytes (ĐANG RẢNH - nằm kề khối 0 nhưng Heap_2 không gộp!) */
-    /* Khối 2: 50 bytes (ĐANG DÙNG) */
-    SimpleBlock_t heap_blocks[3] = {
-        { .block_size = 20U, .is_free = true  },
-        { .block_size = 30U, .is_free = true  },
-        { .block_size = 50U, .is_free = false }
-    };
+    AllocatorSim_t h2, h4;
+    Sim_Init(&h2, 100U);
+    Sim_Init(&h4, 100U);
 
-    uint32_t total_free_bytes = Mock_Heap2_GetTotalFree(heap_blocks, 3U);
-    printf("[Trạng thái] Tổng dung lượng RAM trống: %u bytes (20B + 30B)\n", total_free_bytes);
+    int32_t a2 = Sim_Alloc(&h2, 20U, true), b2 = Sim_Alloc(&h2, 30U, true);
+    Sim_Alloc(&h2, 50U, true);
 
-    /* 1. Yêu cầu cấp phát 25 bytes -> Có khối 30B chứa được -> Thành công */
-    bool alloc_25 = Mock_Heap2_CanAllocate(heap_blocks, 3U, 25U);
-    printf("[Yêu cầu 1] Cấp phát 25 bytes -> Kết quả: %s (Kỳ vọng: THÀNH CÔNG)\n",
-           alloc_25 ? "THÀNH CÔNG" : "THẤT BẠI");
+    int32_t a4 = Sim_Alloc(&h4, 20U, false), b4 = Sim_Alloc(&h4, 30U, false);
+    Sim_Alloc(&h4, 50U, false);
 
-    /* 2. Yêu cầu cấp phát 40 bytes -> Tổng trống là 50B nhưng khối lớn nhất chỉ là 30B -> THẤT BẠI! */
-    bool alloc_40 = Mock_Heap2_CanAllocate(heap_blocks, 3U, 40U);
-    printf("[Yêu cầu 2] Cấp phát 40 bytes -> Kết quả: %s (Kỳ vọng: THẤT BẠI)\n\n",
-           alloc_40 ? "THÀNH CÔNG" : "THẤT BẠI");
+    Print_Map("Trước khi Free", &h2);
+    Sim_Free(&h2, a2, false);
+    Sim_Free(&h2, b2, false);
+    Sim_Free(&h4, a4, true);
+    Sim_Free(&h4, b4, true);
 
-    if ((total_free_bytes == 50U) && (alloc_25 == true) && (alloc_40 == false)) {
-        printf(">>> [TEST PASSED] Tái hiện thành công cạm bẫy External Fragmentation của Heap_2!\n");
-        printf("    Lời khuyên: Luôn chuyển đổi sang Heap_4 hoặc Static Allocation trong thực tế.\n");
+    Print_Map("Heap_2 sau Free", &h2);
+    Print_Map("Heap_4 sau Free", &h4);
+
+    printf("\n[THỬ THÁCH: Xin cấp phát một vùng đệm liên tục 40 Bytes!]\n");
+    int32_t res_h2 = Sim_Alloc(&h2, 40U, true);
+    int32_t res_h4 = Sim_Alloc(&h4, 40U, false);
+
+    printf("  - Heap_2 Alloc(40B) : %s (Tổng trống vẫn là 50B nhưng bị băm 20B + 30B -> LỖI OOM!)\n",
+           (res_h2 >= 0) ? "THÀNH CÔNG" : "THẤT BẠI (OOM!)");
+    printf("  - Heap_4 Alloc(40B) : %s (Đã gộp 20B+30B = 50B tại offset %d -> SỐNG SÓT!)\n\n",
+           (res_h4 >= 0) ? "THÀNH CÔNG" : "THẤT BẠI", res_h4);
+
+    if ((res_h2 < 0) && (res_h4 >= 0)) {
+        printf(">>> [TEST PASSED] Chứng minh thành công thảm họa External Fragmentation của Heap_2!\n");
     } else {
-        printf(">>> [TEST FAILED] Sai lệch kịch bản phân mảnh bộ nhớ!\n");
+        printf(">>> [TEST FAILED] Sai lệch mô phỏng phân mảnh!\n");
+        return 1;
     }
 
     return 0;

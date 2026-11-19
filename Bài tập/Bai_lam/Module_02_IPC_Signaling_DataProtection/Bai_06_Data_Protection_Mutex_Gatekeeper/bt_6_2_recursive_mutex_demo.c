@@ -6,17 +6,9 @@
  * BÀI TẬP 6.2: Chống Bế Tắc Self-Deadlock Bằng Recursive Mutex [⭐⭐⭐]
  * ============================================================================
  * MỤC TIÊU:
- *   1. Hiểu bản chất cơ chế bộ đếm độ sâu đệ quy (Recursive Call Depth).
- *   2. Ngăn ngừa lỗi Self-Deadlock khi một Task gọi lại hàm đã chiếm khóa.
- *   3. Kiểm soát quyền sở hữu: CẤM Task không sở hữu nhả khóa Mutex của Task khác.
- *
- * HƯỚNG DẪN BIÊN DỊCH & CHẠY:
- *   Windows (PowerShell):
- *     gcc -Wall -Wextra -std=c11 bt_6_2_recursive_mutex_demo.c -o bt_6_2_recursive_mutex_demo.exe
- *     .\bt_6_2_recursive_mutex_demo.exe
- *   Linux / macOS:
- *     gcc -Wall -Wextra -std=c11 bt_6_2_recursive_mutex_demo.c -o bt_6_2_recursive_mutex_demo
- *     ./bt_6_2_recursive_mutex_demo
+ *   1. Mô phỏng cây gọi hàm lồng nhau (Flash_WriteConfig -> Flash_WriteSector).
+ *   2. Giải thích vì sao Mutex thường bị Self-Deadlock ở tầng lồng 2.
+ *   3. Trực quan hóa bộ đếm Recursive Depth (0 -> 1 -> 2 -> 1 -> 0) & Owner Guard.
  * ============================================================================
  */
 
@@ -30,7 +22,7 @@ typedef struct {
     bool is_locked;
 } MockRecursiveMutex_t;
 
-/* TODO: [1] Cài đặt hàm khởi tạo Mock_RecursiveMutex_Init() */
+/* TODO: [1] Khởi tạo Recursive Mutex */
 void Mock_RecursiveMutex_Init(MockRecursiveMutex_t *p_mutex) {
     if (p_mutex != NULL) {
         p_mutex->owner_task_id = 0U;
@@ -39,56 +31,50 @@ void Mock_RecursiveMutex_Init(MockRecursiveMutex_t *p_mutex) {
     }
 }
 
-/* TODO: [2] Cài đặt hàm Mock_RecursiveMutex_Take() */
+/* TODO: [2] Lấy Recursive Mutex (cho phép cùng Owner lấy lồng nhiều lần) */
 bool Mock_RecursiveMutex_Take(MockRecursiveMutex_t *p_mutex, uint32_t calling_task_id) {
     if (p_mutex == NULL) {
         return false;
     }
-
-    /* Chưa bị khóa -> Nhận khóa lần đầu */
     if (!p_mutex->is_locked) {
         p_mutex->is_locked = true;
         p_mutex->owner_task_id = calling_task_id;
         p_mutex->recursive_depth = 1U;
         return true;
     }
-
-    /* Đã bị khóa: Nếu chính task này gọi lại -> Tăng bộ đếm đệ quy */
     if (p_mutex->owner_task_id == calling_task_id) {
         p_mutex->recursive_depth++;
         return true;
     }
-
-    /* Task khác đòi lấy -> Thất bại */
     return false;
 }
 
-/* TODO: [3] Cài đặt hàm Mock_RecursiveMutex_Give() */
+/* TODO: [3] Nhả Recursive Mutex (Chỉ giảm Depth, mở hẳn khi Depth == 0) */
 bool Mock_RecursiveMutex_Give(MockRecursiveMutex_t *p_mutex, uint32_t calling_task_id) {
-    if ((p_mutex == NULL) || (!p_mutex->is_locked)) {
+    if ((p_mutex == NULL) || (!p_mutex->is_locked) || (p_mutex->owner_task_id != calling_task_id)) {
         return false;
     }
-
-    /* Cấm task khác tự tiện nhả khóa! */
-    if (p_mutex->owner_task_id != calling_task_id) {
-        return false;
-    }
-
     p_mutex->recursive_depth--;
     if (p_mutex->recursive_depth == 0U) {
         p_mutex->is_locked = false;
         p_mutex->owner_task_id = 0U;
     }
-
     return true;
 }
 
-/* ============================================================================
- * HÀM MAIN: TEST HARNESS TỰ ĐỘNG
- * ============================================================================
- */
+static void Print_State(const char *call_trace, const MockRecursiveMutex_t *m, const char *note) {
+    printf("  %-36s | Locked=%-5s | Owner=Task%-3u | Depth=%u | %s\n",
+           call_trace, m->is_locked ? "TRUE" : "FALSE", m->owner_task_id, m->recursive_depth, note);
+}
+
 int main(void) {
-    printf("=== BÀI TẬP 6.2: KIỂM CHỨNG RECURSIVE MUTEX & CHỐNG SELF-DEADLOCK ===\n\n");
+    printf("================================================================================\n");
+    printf("   BÀI TẬP 6.2: CHỐNG BẾ TẮC SELF-DEADLOCK BẰNG RECURSIVE MUTEX                 \n");
+    printf("================================================================================\n");
+    printf("Tình huống: Flash_SaveConfig() lấy Mutex SPI -> Bên trong gọi Flash_WriteSector()\n");
+    printf("            hàm này LẠI xin lấy tiếp đúng Mutex SPI đó!\n");
+    printf("  - Nếu dùng xSemaphoreCreateMutex() thường : TREO VĨNH VIỄN (Self-Deadlock) ở bước 2!\n");
+    printf("  - Nếu dùng xSemaphoreCreateRecursiveMutex(): Tăng bộ đếm uxRecursiveCallCount.\n\n");
 
     MockRecursiveMutex_t xSpiMutex;
     Mock_RecursiveMutex_Init(&xSpiMutex);
@@ -96,35 +82,32 @@ int main(void) {
     const uint32_t task_flash_id = 101U;
     const uint32_t task_other_id = 202U;
 
-    /* 1. Task Flash lấy khóa lần 1 (trong hàm Flash_WriteConfig) -> Thành công */
-    bool take1 = Mock_RecursiveMutex_Take(&xSpiMutex, task_flash_id);
-    printf("[Bước 1] Task Flash lấy Mutex lần 1: %s (Depth = %u)\n",
-           take1 ? "THÀNH CÔNG" : "THẤT BẠI", xSpiMutex.recursive_depth);
+    Print_State("0. Khởi tạo Mutex", &xSpiMutex, "Sẵn sàng");
 
-    /* 2. Task Flash tiếp tục gọi hàm Flash_WriteSector và lấy khóa lần 2 -> Cho phép đệ quy! */
-    bool take2 = Mock_RecursiveMutex_Take(&xSpiMutex, task_flash_id);
-    printf("[Bước 2] Task Flash gọi đệ quy lấy Mutex lần 2: %s (Depth = %u) -> Không bị Self-Deadlock!\n",
-           take2 ? "THÀNH CÔNG" : "THẤT BẠI", xSpiMutex.recursive_depth);
+    bool t1 = Mock_RecursiveMutex_Take(&xSpiMutex, task_flash_id);
+    Print_State("1. Flash_SaveConfig() -> Take()", &xSpiMutex, "Chiếm khóa tầng 1");
 
-    /* 3. Task khác cố tình nhả khóa của Task Flash -> Bị chặn lại */
+    bool t2 = Mock_RecursiveMutex_Take(&xSpiMutex, task_flash_id);
+    Print_State("2.   Flash_WriteSector() -> Take()", &xSpiMutex, "Tăng Depth -> KHÔNG DEADLOCK!");
+
+    bool t_intruder = Mock_RecursiveMutex_Take(&xSpiMutex, task_other_id);
+    Print_State("3. Task 202 xen ngang -> Take()", &xSpiMutex, t_intruder ? "SAI!" : "Bị chặn (Đang có chủ)");
+
     bool illegal_give = Mock_RecursiveMutex_Give(&xSpiMutex, task_other_id);
-    printf("[Bước 3] Task khác cố tình nhả khóa: %s (Kỳ vọng: THẤT BẠI)\n",
-           illegal_give ? "THÀNH CÔNG" : "BỊ CHẶN LẠI");
+    Print_State("4. Task 202 phá khóa -> Give()", &xSpiMutex, illegal_give ? "SAI!" : "BỊ TỪ CHỐI (Sai Owner!)");
 
-    /* 4. Task Flash nhả khóa lần 1 -> Khóa vẫn được giữ vì depth = 1 */
     Mock_RecursiveMutex_Give(&xSpiMutex, task_flash_id);
-    printf("[Bước 4] Task Flash nhả khóa lần 1: Khóa vẫn bận = %s (Depth = %u)\n",
-           xSpiMutex.is_locked ? "TRUE" : "FALSE", xSpiMutex.recursive_depth);
+    Print_State("5.   Thoát Flash_WriteSector()", &xSpiMutex, "Depth=1 -> VẪN ĐANG KHÓA!");
 
-    /* 5. Task Flash nhả khóa lần 2 -> Khóa chính thức mở hoàn toàn */
     Mock_RecursiveMutex_Give(&xSpiMutex, task_flash_id);
-    printf("[Bước 5] Task Flash nhả khóa lần 2: Khóa đã mở = %s (Depth = %u)\n\n",
-           xSpiMutex.is_locked ? "TRUE" : "FALSE", xSpiMutex.recursive_depth);
+    Print_State("6. Thoát Flash_SaveConfig()", &xSpiMutex, "Depth=0 -> MỞ KHÓA HOÀN TOÀN!");
+    printf("\n");
 
-    if (take1 && take2 && (!illegal_give) && (!xSpiMutex.is_locked)) {
-        printf(">>> [TEST PASSED] Recursive Mutex xử lý lồng nhau và bảo vệ quyền sở hữu chuẩn xác 100%%!\n");
+    if (t1 && t2 && (!t_intruder) && (!illegal_give) && (!xSpiMutex.is_locked)) {
+        printf(">>> [TEST PASSED] Recursive Mutex xử lý lồng nhau & bảo vệ quyền sở hữu chuẩn 100%%!\n");
     } else {
         printf(">>> [TEST FAILED] Lỗi logic quản lý Recursive Mutex!\n");
+        return 1;
     }
 
     return 0;

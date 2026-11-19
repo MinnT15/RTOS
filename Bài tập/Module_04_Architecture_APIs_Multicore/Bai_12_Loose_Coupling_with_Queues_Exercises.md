@@ -540,15 +540,26 @@ MockQueue_t* QueueSet_Select(MockQueueSet_t *set) {
 
 ---
 
-## 🧭 HƯỚNG DẪN BẮT ĐẦU THỰC HÀNH
-1. Mở file [Bai_12_Loose_Coupling_with_Queues_Exercises.md](./Bai_12_Loose_Coupling_with_Queues_Exercises.md) và tự mình làm toàn bộ 18 câu trắc nghiệm.
-2. Di chuyển vào thư mục code: `cd "Bai_lam/Module_04_Architecture_APIs_Multicore/Bai_12_Loose_Coupling_with_Queues"`
-3. Lần lượt hoàn thiện các file:
+## 🧭 HƯỚNG DẪN BẮT ĐẦU THỰC HÀNH TRÊN LINUX WSL
+1. Làm toàn bộ phần trắc nghiệm & phân tích tình huống trong tài liệu này trước khi viết code.
+2. Từ thư mục gốc `Bài tập/` trên máy ảo Linux WSL Ubuntu, biên dịch và chạy toàn bộ các bài lab của bài học này bằng lệnh:
+   ```bash
+   # Kiểm tra nhanh môi trường (lần đầu)
+   make check-env
+
+   # Biên dịch & chạy chi tiết kèm sơ đồ/bảng log trực quan trên terminal
+   make run-bai12
+
+   # Chạy kèm AddressSanitizer & UBSan để phát hiện lỗi bộ nhớ/UB
+   make MODE=asan run-bai12
+
+   # Hoặc kiểm tra từng bài riêng trong thư mục Bai_lam/Module_04_Architecture_APIs_Multicore/Bai_12_Loose_Coupling_with_Queues
+   cd "Bai_lam/Module_04_Architecture_APIs_Multicore/Bai_12_Loose_Coupling_with_Queues"
+   make run
+   make valgrind
+   ```
+3. Các file mã nguồn cần hoàn thiện:
    - `bt_12_1_tagged_union_normalized_queue.c`
    - `bt_12_2_zero_copy_ownership_queue.c`
    - `bt_12_3_queue_set_multi_source.c`
-4. Biên dịch và kiểm tra tính đúng đắn với GCC:
-   ```powershell
-   gcc -Wall -Wextra -std=c11 bt_12_1_tagged_union_normalized_queue.c -o test.exe; .\test.exe
-   ```
-5. Đảm bảo toàn bộ test case đều hiển thị `>>> [TEST PASSED]`.
+4. Đảm bảo toàn bộ các bài đọc log phân tích đầy đủ và kết thúc với dòng `>>> [TEST PASSED]`.

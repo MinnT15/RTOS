@@ -3,20 +3,12 @@
  * KHÓA HỌC: FREERTOS ADVANCED
  * MODULE: Module_02_IPC_Signaling_DataProtection
  * CHUYÊN ĐỀ: Bai_07_Task_Notifications_IPC
- * BÀI TẬP 7.2: Quản Lý Cờ Sự Kiện Đa Năng 32-bit Với eSetBits & xTaskNotifyWait [⭐⭐⭐]
+ * BÀI TẬP 7.2: Làm Chủ Toàn Bộ 5 Chế Độ eNotifyAction & Event Bits 32-bit [⭐⭐⭐]
  * ============================================================================
  * MỤC TIÊU:
- *   1. Làm chủ chế độ eSetBits biến Notification thành Event Group 32-bit.
- *   2. Thao tác xóa cờ linh hoạt sau khi đọc bằng bits_to_clear_on_exit.
- *   3. Ứng dụng quản trị đa trạng thái nguồn pin (Sạc, Pin yếu, Quá nhiệt).
- *
- * HƯỚNG DẪN BIÊN DỊCH & CHẠY:
- *   Windows (PowerShell):
- *     gcc -Wall -Wextra -std=c11 bt_7_2_task_notify_event_bits.c -o bt_7_2_task_notify_event_bits.exe
- *     .\bt_7_2_task_notify_event_bits.exe
- *   Linux / macOS:
- *     gcc -Wall -Wextra -std=c11 bt_7_2_task_notify_event_bits.c -o bt_7_2_task_notify_event_bits
- *     ./bt_7_2_task_notify_event_bits
+ *   1. Cài đặt đủ 5 hành động eNotifyAction của xTaskNotify():
+ *      eNoAction, eSetBits, eIncrement, eSetValueWithOverwrite, eSetValueWithoutOverwrite.
+ *   2. Xử lý cơ chế Clear bits lúc vào (Entry) và lúc thoát (Exit) của xTaskNotifyWait().
  * ============================================================================
  */
 
@@ -28,87 +20,113 @@
 #define BIT_BATTERY_LOW         (1U << 1U)
 #define BIT_OVER_TEMPERATURE    (1U << 2U)
 
+typedef enum {
+    eNoAction = 0,
+    eSetBits,
+    eIncrement,
+    eSetValueWithOverwrite,
+    eSetValueWithoutOverwrite
+} MockNotifyAction_t;
+
 typedef struct {
     uint32_t ulNotifiedValue;
-    bool is_notified;
+    bool     is_pending;
 } MockTCB_t;
 
-/* TODO: [1] Cài đặt hàm khởi tạo Mock_TCB_Init() */
 void Mock_TCB_Init(MockTCB_t *p_tcb) {
     if (p_tcb != NULL) {
         p_tcb->ulNotifiedValue = 0U;
-        p_tcb->is_notified = false;
+        p_tcb->is_pending = false;
     }
 }
 
-/* TODO: [2] Cài đặt hàm Mock_TaskNotify_SetBits() */
-void Mock_TaskNotify_SetBits(MockTCB_t *p_tcb, uint32_t bits) {
-    if (p_tcb != NULL) {
-        p_tcb->ulNotifiedValue |= bits;
-        p_tcb->is_notified = true;
-    }
-}
-
-/* TODO: [3] Cài đặt hàm Mock_TaskNotifyWait() */
-bool Mock_TaskNotifyWait(MockTCB_t *p_tcb, uint32_t bits_to_clear_on_exit, uint32_t *p_out_val) {
-    if ((p_tcb == NULL) || (!p_tcb->is_notified)) {
+/* TODO: [1] Cài đặt xTaskNotify() đầy đủ 5 hành động eNotifyAction */
+bool Mock_TaskNotify(MockTCB_t *p_tcb, uint32_t ulValue, MockNotifyAction_t eAction) {
+    if (p_tcb == NULL) {
         return false;
     }
+    bool status = true;
+    switch (eAction) {
+        case eNoAction:
+            /* Chỉ đánh thức Task, KHÔNG sửa ulNotifiedValue */
+            break;
+        case eSetBits:
+            p_tcb->ulNotifiedValue |= ulValue;
+            break;
+        case eIncrement:
+            p_tcb->ulNotifiedValue++;
+            break;
+        case eSetValueWithOverwrite:
+            p_tcb->ulNotifiedValue = ulValue;
+            break;
+        case eSetValueWithoutOverwrite:
+            if (p_tcb->is_pending) {
+                return false; /* pdFAIL! Không ghi đè nếu Task chưa đọc giá trị trước */
+            }
+            p_tcb->ulNotifiedValue = ulValue;
+            break;
+        default:
+            return false;
+    }
+    p_tcb->is_pending = true;
+    return status;
+}
 
+/* TODO: [2] Cài đặt xTaskNotifyWait() có clear mask lúc Entry và lúc Exit */
+bool Mock_TaskNotifyWait(MockTCB_t *p_tcb, uint32_t ulBitsToClearOnEntry,
+                         uint32_t ulBitsToClearOnExit, uint32_t *p_out_val) {
+    if (p_tcb == NULL) {
+        return false;
+    }
+    if (!p_tcb->is_pending) {
+        p_tcb->ulNotifiedValue &= ~ulBitsToClearOnEntry;
+        return false;
+    }
     if (p_out_val != NULL) {
         *p_out_val = p_tcb->ulNotifiedValue;
     }
-
-    /* Xóa các bit chỉ định sau khi đọc */
-    p_tcb->ulNotifiedValue &= ~bits_to_clear_on_exit;
-    if (p_tcb->ulNotifiedValue == 0U) {
-        p_tcb->is_notified = false;
-    }
-
+    p_tcb->ulNotifiedValue &= ~ulBitsToClearOnExit;
+    p_tcb->is_pending = false;
     return true;
 }
 
-/* ============================================================================
- * HÀM MAIN: TEST HARNESS TỰ ĐỘNG
- * ============================================================================
- */
 int main(void) {
-    printf("=== BÀI TẬP 7.2: QUẢN LÝ CỜ SỰ KIỆN 32-BIT VỚI TASK NOTIFICATIONS ===\n\n");
+    printf("================================================================================\n");
+    printf("   BÀI TẬP 7.2: LÀM CHỦ 5 CHẾ ĐỘ eNotifyAction & EVENT BITS 32-BIT TRONG TCB    \n");
+    printf("================================================================================\n");
 
-    MockTCB_t xPowerMgrTCB;
-    Mock_TCB_Init(&xPowerMgrTCB);
+    MockTCB_t xPowerMgr;
+    Mock_TCB_Init(&xPowerMgr);
 
-    /* 1. Ngắt cắm sạc kích hoạt: Set bit 0 */
-    Mock_TaskNotify_SetBits(&xPowerMgrTCB, BIT_CHARGER_CONNECTED);
+    printf("[PHẦN 1 — CHẾ ĐỘ eSetBits (Thay Event Group 32-bit)]:\n");
+    Mock_TaskNotify(&xPowerMgr, BIT_CHARGER_CONNECTED, eSetBits);
+    Mock_TaskNotify(&xPowerMgr, BIT_OVER_TEMPERATURE,  eSetBits);
+    printf("  - Sau khi set BIT_CHARGER (0x01) | BIT_OVER_TEMP (0x04) -> Reg = 0x%02X (Binary: 0101)\n",
+           xPowerMgr.ulNotifiedValue);
 
-    /* 2. Cảm biến nhiệt độ phát hiện quá nhiệt: Set tiếp bit 2 */
-    Mock_TaskNotify_SetBits(&xPowerMgrTCB, BIT_OVER_TEMPERATURE);
+    uint32_t events = 0U;
+    bool w1 = Mock_TaskNotifyWait(&xPowerMgr, 0U, 0xFFFFFFFFUL, &events);
+    printf("  - xTaskNotifyWait(ClearExit=ALL) -> Đọc = 0x%02X | Sau Wait: Reg = 0x%02X, Pending=%s\n\n",
+           events, xPowerMgr.ulNotifiedValue, xPowerMgr.is_pending ? "TRUE" : "FALSE");
 
-    printf("[Sự kiện kích hoạt] Đã set: BIT_CHARGER (0x01) và BIT_OVER_TEMP (0x04)\n");
+    printf("[PHẦN 2 — CHẾ ĐỘ MAILBOX: WithOverwrite vs WithoutOverwrite]:\n");
+    bool mb1 = Mock_TaskNotify(&xPowerMgr, 0x1234U, eSetValueWithoutOverwrite);
+    printf("  - Gửi 0x1234 (Mailbox trống, WithoutOverwrite) : %s (Val = 0x%04X)\n",
+           mb1 ? "pdPASS" : "pdFAIL", xPowerMgr.ulNotifiedValue);
 
-    /* 3. Task Power Manager thức dậy đọc các sự kiện */
-    uint32_t received_events = 0U;
-    /* Yêu cầu: Đọc cờ và xóa sạch toàn bộ các bit đã đọc (0xFFFFFFFF) */
-    bool wait_ok = Mock_TaskNotifyWait(&xPowerMgrTCB, 0xFFFFFFFFUL, &received_events);
+    bool mb2 = Mock_TaskNotify(&xPowerMgr, 0x9999U, eSetValueWithoutOverwrite);
+    printf("  - Gửi 0x9999 khi 0x1234 CHƯA ĐỌC (WithoutOver) : %s (Val vẫn giữ = 0x%04X!)\n",
+           mb2 ? "pdPASS" : "pdFAIL", xPowerMgr.ulNotifiedValue);
 
-    printf("[Đọc sự kiện] Kết quả hàm Wait: %s | Giá trị cờ đọc được: 0x%02X\n",
-           wait_ok ? "THÀNH CÔNG" : "THẤT BẠI", received_events);
+    bool mb3 = Mock_TaskNotify(&xPowerMgr, 0xCAFEU, eSetValueWithOverwrite);
+    printf("  - Gửi 0xCAFE với eSetValueWithOverwrite        : %s (Ép ghi đè = 0x%04X!)\n\n",
+           mb3 ? "pdPASS" : "pdFAIL", xPowerMgr.ulNotifiedValue);
 
-    if (received_events & BIT_CHARGER_CONNECTED) {
-        printf("  -> Phát hiện: Bộ sạc đã được cắm vào!\n");
-    }
-    if (received_events & BIT_OVER_TEMPERATURE) {
-        printf("  -> CẢNH BÁO: Pin đang bị quá nhiệt, kích hoạt quạt làm mát!\n");
-    }
-
-    printf("\n[Trạng thái sau khi đọc] Pending = %s | Value = 0x%02X\n\n",
-           xPowerMgrTCB.is_notified ? "TRUE" : "FALSE", xPowerMgrTCB.ulNotifiedValue);
-
-    if (wait_ok && (received_events == (BIT_CHARGER_CONNECTED | BIT_OVER_TEMPERATURE)) &&
-        (!xPowerMgrTCB.is_notified) && (xPowerMgrTCB.ulNotifiedValue == 0U)) {
-        printf(">>> [TEST PASSED] Task Notification thay thế hoàn hảo Event Group 32-bit!\n");
+    if (w1 && (events == 0x05U) && mb1 && (!mb2) && mb3 && (xPowerMgr.ulNotifiedValue == 0xCAFEU)) {
+        printf(">>> [TEST PASSED] 5 chế độ eNotifyAction & Event/Mailbox hoạt động chuẩn 100%%!\n");
     } else {
-        printf(">>> [TEST FAILED] Lỗi logic xử lý cờ sự kiện trong Task Notification!\n");
+        printf(">>> [TEST FAILED] Lỗi logic eNotifyAction!\n");
+        return 1;
     }
 
     return 0;

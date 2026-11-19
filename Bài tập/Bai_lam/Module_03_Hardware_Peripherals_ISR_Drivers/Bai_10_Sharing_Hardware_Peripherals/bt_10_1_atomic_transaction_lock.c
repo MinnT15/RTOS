@@ -148,6 +148,12 @@ int main(void) {
     assert(bLock3 == true);
     Spi_EndTransaction(DEV_FLASH);
 
+    printf("\n[BIỂU ĐỒ SÓNG ĐƯỜNG TRUYỀN SPI CS (LỖI NAIVE vs ATOMIC LOCK)]:\n");
+    printf("  1) Naive CS (Xung đột): CS_IMU   ¯¯|________|¯¯¯¯¯¯¯¯  (Cả 2 cùng LOW -> HỎNG MISO!)\n");
+    printf("                          CS_FLASH ¯¯¯¯¯|________|¯¯¯\n");
+    printf("  2) Mutex Atomic Lock  : CS_IMU   ¯¯|________|¯¯¯¯¯¯¯¯  (Tuần tự an toàn 100%%)\n");
+    printf("                          CS_FLASH ¯¯¯¯¯¯¯¯¯¯¯¯|_____|¯\n");
+
     printf("\n>>> [TEST PASSED] Cơ chế Atomic Transaction Lock bảo vệ an toàn 100%% bus ngoại vi chia sẻ!\n");
     return 0;
 }

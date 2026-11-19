@@ -403,28 +403,61 @@ Học viên làm bài trực tiếp trong thư mục `Bai_lam/Module_05_Troubles
 <details>
 <summary><b>👉 Xem mã nguồn tham khảo &amp; Giải pháp (Solution)</b></summary>
 
+#### 💻 Mã Nguồn Hoàn Chỉnh (`bt_15_1_stack_high_watermark_analyzer.c`)
 ```c
+/**
+ * @file bt_15_1_stack_high_watermark_analyzer.c
+ * @brief Bộ phân tích & Trực quan hóa Đỉnh Stack (High Watermark) FreeRTOS Method 2.
+ */
+
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
 #include <assert.h>
 
-#define STACK_CANARY_BYTE       (0xA5U)
-#define STACK_CANARY_WORD       (0xA5A5A5A5U)
+#define STACK_CANARY_BYTE        (0xA5U)
+#define STACK_CANARY_WORD        (0xA5A5A5A5U)
 #define CANARY_CHECK_DEPTH_WORDS (5U)
+#define MAX_TASK_NAME_LEN        (16U)
+
+typedef enum {
+    STACK_STATUS_OK = 0,
+    STACK_STATUS_WARNING_LOW_MARGIN,
+    STACK_STATUS_OVERFLOW_DETECTED
+} StackStatus_t;
 
 typedef struct {
-    char taskName[16];
+    char      taskName[MAX_TASK_NAME_LEN];
     uint32_t *stackBase;
-    uint32_t stackDepthWords;
+    uint32_t  stackDepthWords;
 } SimulatedTCB_t;
 
 void InitTaskStack(uint32_t *stackBuf, uint32_t depthWords) {
+    if ((stackBuf == NULL) || (depthWords == 0U)) {
+        return;
+    }
     memset(stackBuf, STACK_CANARY_BYTE, depthWords * sizeof(uint32_t));
 }
 
+void SimulateTaskStackUsage(SimulatedTCB_t *tcb, uint32_t wordsConsumed) {
+    if ((tcb == NULL) || (tcb->stackBase == NULL)) {
+        return;
+    }
+    if (wordsConsumed > tcb->stackDepthWords) {
+        wordsConsumed = tcb->stackDepthWords;
+    }
+    uint32_t startIdx = tcb->stackDepthWords - wordsConsumed;
+    for (uint32_t i = startIdx; i < tcb->stackDepthWords; i++) {
+        tcb->stackBase[i] = 0x12340000U | (i & 0xFFFFU);
+    }
+}
+
+/* TODO: [1] Đếm số word còn nguyên mẫu Canary 0xA5A5A5A5 từ đáy Stack lên */
 uint32_t CalculateHighWaterMark(const SimulatedTCB_t *tcb) {
+    if ((tcb == NULL) || (tcb->stackBase == NULL)) {
+        return 0U;
+    }
     uint32_t unusedWords = 0U;
     for (uint32_t i = 0U; i < tcb->stackDepthWords; i++) {
         if (tcb->stackBase[i] == STACK_CANARY_WORD) {
@@ -436,13 +469,88 @@ uint32_t CalculateHighWaterMark(const SimulatedTCB_t *tcb) {
     return unusedWords;
 }
 
+/* TODO: [2] Kiểm tra tràn Stack Method 2 (20 bytes = 5 words cuối ở đáy Stack) */
 bool CheckStackOverflowCanary(const SimulatedTCB_t *tcb) {
+    if ((tcb == NULL) || (tcb->stackBase == NULL)) {
+        return true;
+    }
     for (uint32_t i = 0U; i < CANARY_CHECK_DEPTH_WORDS; i++) {
         if (tcb->stackBase[i] != STACK_CANARY_WORD) {
-            return true; /* Stack overflow occurred */
+            return true;
         }
     }
     return false;
+}
+
+StackStatus_t EvaluateStackHealth(const SimulatedTCB_t *tcb, float warningThresholdPercent) {
+    if (CheckStackOverflowCanary(tcb)) {
+        return STACK_STATUS_OVERFLOW_DETECTED;
+    }
+    uint32_t hwm = CalculateHighWaterMark(tcb);
+    double marginPct = ((double)hwm / (double)tcb->stackDepthWords) * 100.0;
+    if (marginPct < (double)warningThresholdPercent) {
+        return STACK_STATUS_WARNING_LOW_MARGIN;
+    }
+    return STACK_STATUS_OK;
+}
+
+static void Print_StackInspector(const SimulatedTCB_t *tcb, float warnPct) {
+    uint32_t hwm  = CalculateHighWaterMark(tcb);
+    uint32_t used = tcb->stackDepthWords - hwm;
+    double   usedPct = ((double)used / (double)tcb->stackDepthWords) * 100.0;
+    double   freePct = 100.0 - usedPct;
+    StackStatus_t st = EvaluateStackHealth(tcb, warnPct);
+    const char *stStr = (st == STACK_STATUS_OK) ? "OK" :
+                        (st == STACK_STATUS_WARNING_LOW_MARGIN) ? "LOW_MARGIN_WARN!" : "OVERFLOW_FAULT!!";
+
+    printf("  [Task: %-12s] Used=%3u/%3u W (%5.1f%%) | HWM=%3u W (%5.1f%% free) | [%s]\n",
+           tcb->taskName, used, tcb->stackDepthWords, usedPct, hwm, freePct, stStr);
+    printf("    Visual [Bottom->Top]: |");
+    uint32_t slots = 24U;
+    uint32_t freeSlots = (hwm * slots) / tcb->stackDepthWords;
+    for (uint32_t s = 0U; s < slots; s++) {
+        printf("%s", (s < freeSlots) ? "." : "#");
+    }
+    printf("| ('.'=Canary 0xA5, '#'=Used)\n");
+    printf("    Canary Bottom[0..4] : 0x%08X 0x%08X 0x%08X 0x%08X 0x%08X\n\n",
+           tcb->stackBase[0], tcb->stackBase[1], tcb->stackBase[2], tcb->stackBase[3], tcb->stackBase[4]);
+}
+
+int main(void) {
+    printf("================================================================================\n");
+    printf("   BÀI TẬP 15.1: BỘ PHÂN TÍCH STACK HIGH WATERMARK & CANARY METHOD 2 (MISRA C) \n");
+    printf("================================================================================\n");
+
+    #define TEST_STACK_SIZE_WORDS 128U
+    uint32_t task1Stack[TEST_STACK_SIZE_WORDS];
+    uint32_t task2Stack[TEST_STACK_SIZE_WORDS];
+
+    SimulatedTCB_t task1 = { "SensorTask",   task1Stack, TEST_STACK_SIZE_WORDS };
+    SimulatedTCB_t task2 = { "MotorControl", task2Stack, TEST_STACK_SIZE_WORDS };
+
+    InitTaskStack(task1.stackBase, task1.stackDepthWords);
+    InitTaskStack(task2.stackBase, task2.stackDepthWords);
+
+    assert(CalculateHighWaterMark(&task1) == TEST_STACK_SIZE_WORDS);
+    SimulateTaskStackUsage(&task1, 40U);
+    SimulateTaskStackUsage(&task2, 110U);
+
+    printf("[GIAI ĐOẠN 1 — SAU STRESS TEST BÌNH THƯỜNG (Ngưỡng cảnh báo = 20.0%%)]:\n");
+    Print_StackInspector(&task1, 20.0f);
+    Print_StackInspector(&task2, 20.0f);
+    assert(CalculateHighWaterMark(&task1) == 88U);
+    assert(EvaluateStackHealth(&task1, 20.0f) == STACK_STATUS_OK);
+    assert(CalculateHighWaterMark(&task2) == 18U);
+    assert(EvaluateStackHealth(&task2, 20.0f) == STACK_STATUS_WARNING_LOW_MARGIN);
+
+    printf("[GIAI ĐOẠN 2 — SỰ CỐ TRÀN NGĂN XẾP (Task 2 dùng quá đà ghi đè 5 words Canary cuối)]:\n");
+    SimulateTaskStackUsage(&task2, 128U);
+    Print_StackInspector(&task2, 20.0f);
+    assert(CheckStackOverflowCanary(&task2) == true);
+    assert(EvaluateStackHealth(&task2, 20.0f) == STACK_STATUS_OVERFLOW_DETECTED);
+
+    printf(">>> [TEST PASSED] bt_15_1_stack_high_watermark_analyzer completed successfully.\n");
+    return 0;
 }
 ```
 </details>
@@ -461,28 +569,158 @@ bool CheckStackOverflowCanary(const SimulatedTCB_t *tcb) {
 <details>
 <summary><b>👉 Xem mã nguồn tham khảo &amp; Giải pháp (Solution)</b></summary>
 
+#### 💻 Mã Nguồn Hoàn Chỉnh (`bt_15_2_runtime_stats_profiler.c`)
 ```c
+/**
+ * @file bt_15_2_runtime_stats_profiler.c
+ * @brief Bộ đo lường hồ sơ thời gian chạy (vTaskGetRunTimeStats) & Xử lý tràn Timer 32-bit.
+ */
+
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
 #include <assert.h>
 
-#define MAX_TRACKED_TASKS 4
+#define MAX_TRACKED_TASKS   4U
+#define MAX_REPORT_BUF_LEN  512U
 
 typedef struct {
-    char name[16];
+    char     name[16];
     uint32_t totalRunTimeTicks;
     uint32_t lastSwitchedInTick;
-    bool isRunning;
+    uint32_t switchInCount;
+    bool     isRunning;
 } TaskProfile_t;
 
 typedef struct {
     TaskProfile_t tasks[MAX_TRACKED_TASKS];
-    uint8_t taskCount;
-    int8_t currentRunningIndex;
-    uint32_t systemUpTimeTicks;
+    uint8_t  taskCount;
+    int8_t   currentRunningIndex;
+    uint32_t totalSystemTicks;
 } RuntimeProfiler_t;
+
+void Profiler_Init(RuntimeProfiler_t *profiler) {
+    if (profiler == NULL) {
+        return;
+    }
+    memset(profiler, 0, sizeof(RuntimeProfiler_t));
+    profiler->currentRunningIndex = -1;
+}
+
+int8_t Profiler_RegisterTask(RuntimeProfiler_t *profiler, const char *name) {
+    if ((profiler == NULL) || (name == NULL) || (profiler->taskCount >= MAX_TRACKED_TASKS)) {
+        return -1;
+    }
+    uint8_t idx = profiler->taskCount;
+    strncpy(profiler->tasks[idx].name, name, sizeof(profiler->tasks[idx].name) - 1U);
+    profiler->tasks[idx].name[sizeof(profiler->tasks[idx].name) - 1U] = '\0';
+    profiler->taskCount++;
+    return (int8_t)idx;
+}
+
+/* TODO: [1] Cài đặt traceTASK_SWITCHED_OUT & traceTASK_SWITCHED_IN xử lý an toàn tràn 32-bit */
+void Profiler_SwitchTask(RuntimeProfiler_t *profiler, int8_t nextTaskIndex, uint32_t currentTick) {
+    if ((profiler == NULL) || (nextTaskIndex < 0) || ((uint8_t)nextTaskIndex >= profiler->taskCount)) {
+        return;
+    }
+
+    if (profiler->currentRunningIndex >= 0) {
+        TaskProfile_t *oldTask = &profiler->tasks[profiler->currentRunningIndex];
+        if (oldTask->isRunning) {
+            /* Phép trừ không dấu uint32_t tự động xử lý đúng wrap-around qua 0xFFFFFFFF! */
+            uint32_t delta = currentTick - oldTask->lastSwitchedInTick;
+            oldTask->totalRunTimeTicks += delta;
+            oldTask->isRunning = false;
+            printf("  [t=0x%08X] traceTASK_SWITCHED_OUT: %-14s (+%u us)\n",
+                   currentTick, oldTask->name, delta);
+        }
+    }
+
+    TaskProfile_t *newTask = &profiler->tasks[nextTaskIndex];
+    newTask->lastSwitchedInTick = currentTick;
+    newTask->isRunning = true;
+    newTask->switchInCount++;
+    profiler->currentRunningIndex = nextTaskIndex;
+    printf("  [t=0x%08X] traceTASK_SWITCHED_IN : %-14s\n", currentTick, newTask->name);
+}
+
+/* TODO: [2] Xuất bảng vTaskGetRunTimeStats() kèm biểu đồ thanh CPU Load */
+void Profiler_FormatStatsReport(RuntimeProfiler_t *profiler, uint32_t currentTick, char *outBuffer, size_t maxLen) {
+    if ((profiler == NULL) || (outBuffer == NULL) || (maxLen == 0U)) {
+        return;
+    }
+
+    if (profiler->currentRunningIndex >= 0) {
+        TaskProfile_t *active = &profiler->tasks[profiler->currentRunningIndex];
+        if (active->isRunning) {
+            uint32_t delta = currentTick - active->lastSwitchedInTick;
+            active->totalRunTimeTicks += delta;
+            active->lastSwitchedInTick = currentTick;
+        }
+    }
+
+    uint32_t total = 0U;
+    for (uint8_t i = 0U; i < profiler->taskCount; i++) {
+        total += profiler->tasks[i].totalRunTimeTicks;
+    }
+    profiler->totalSystemTicks = total;
+
+    int w = snprintf(outBuffer, maxLen,
+                     "\n  %-14s | %-12s | %-9s | %-8s | %s\n  ----------------------------------------------------------------------\n",
+                     "Task Name", "Abs Time(us)", "Switches", "CPU (%)", "Biểu đồ tải");
+    size_t off = (w > 0) ? (size_t)w : 0U;
+
+    for (uint8_t i = 0U; i < profiler->taskCount; i++) {
+        const TaskProfile_t *t = &profiler->tasks[i];
+        double pct = (total > 0U) ? ((double)t->totalRunTimeTicks * 100.0 / (double)total) : 0.0;
+        uint32_t bars = (uint32_t)((pct * 20.0) / 100.0);
+        char barStr[24];
+        for (uint32_t b = 0U; b < 20U; b++) {
+            barStr[b] = (b < bars) ? '#' : '.';
+        }
+        barStr[20] = '\0';
+
+        if (off < maxLen) {
+            w = snprintf(outBuffer + off, maxLen - off,
+                         "  %-14s | %-12u | %-9u | %6.2f%%  | [%s]\n",
+                         t->name, t->totalRunTimeTicks, t->switchInCount, pct, barStr);
+            if (w > 0) { off += (size_t)w; }
+        }
+    }
+}
+
+int main(void) {
+    printf("================================================================================\n");
+    printf("   BÀI TẬP 15.2: PROFILER THỐNG KÊ TẢI CPU & BẪY TRÀN TIMER 32-BIT (WRAP)       \n");
+    printf("================================================================================\n");
+    printf("[Trace Hook Execution Log — High-Resolution Timer @ 1 MHz (1 tick = 1 us)]:\n");
+
+    RuntimeProfiler_t profiler;
+    Profiler_Init(&profiler);
+
+    int8_t idSensor = Profiler_RegisterTask(&profiler, "SensorTask");
+    int8_t idMotor  = Profiler_RegisterTask(&profiler, "MotorControl");
+    int8_t idIdle   = Profiler_RegisterTask(&profiler, "IDLE");
+
+    /* Bắt đầu từ gần cuối ngưỡng tràn 32-bit (0xFFFFFF00) để chứng minh Wrap-around an toàn! */
+    uint32_t t0 = 0xFFFFFF00U;
+    Profiler_SwitchTask(&profiler, idSensor, t0);            /* Chạy 100us -> tới 0xFFFFFF64 */
+    Profiler_SwitchTask(&profiler, idMotor,  t0 + 100U);     /* Chạy 200us -> TRÀN QUA 0x0000002C! */
+    Profiler_SwitchTask(&profiler, idIdle,   t0 + 300U);     /* Chạy 700us -> tới 0x000002E8 */
+
+    char reportBuf[MAX_REPORT_BUF_LEN];
+    Profiler_FormatStatsReport(&profiler, t0 + 1000U, reportBuf, sizeof(reportBuf));
+    printf("%s\n", reportBuf);
+
+    assert(profiler.tasks[idSensor].totalRunTimeTicks == 100U);
+    assert(profiler.tasks[idMotor].totalRunTimeTicks  == 200U);
+    assert(profiler.tasks[idIdle].totalRunTimeTicks   == 700U);
+    assert(profiler.totalSystemTicks == 1000U);
+
+    printf(">>> [TEST PASSED] bt_15_2_runtime_stats_profiler completed successfully.\n");
+    return 0;
+}
 ```
 </details>
 
@@ -500,23 +738,205 @@ typedef struct {
 <details>
 <summary><b>👉 Xem mã nguồn tham khảo &amp; Giải pháp (Solution)</b></summary>
 
+#### 💻 Mã Nguồn Hoàn Chỉnh (`bt_15_3_assertion_failure_logger.c`)
 ```c
+/**
+ * @file bt_15_3_assertion_failure_logger.c
+ * @brief Hộp đen lưu vết sự cố (Backup SRAM Non-Volatile Crash Logger & Hex Dump).
+ */
+
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
+#include <stddef.h>
 #include <assert.h>
 
-#define CRASH_MAGIC_HEADER  (0xDEADBEEFU)
+#define CRASH_MAGIC_VALID   (0xDEADBEEFU)
+#define CRASH_MAGIC_CLEARED (0x00000000U)
+#define MAX_FILE_NAME_LEN   (32U)
+#define MAX_TASK_NAME_LEN   (16U)
+
+typedef enum {
+    FAULT_NONE = 0,
+    FAULT_CONFIG_ASSERT,
+    FAULT_STACK_OVERFLOW,
+    FAULT_MALLOC_FAILED,
+    FAULT_HARDFAULT_VECTOR
+} FaultType_t;
 
 typedef struct {
-    uint32_t magic;
-    char fileName[32];
-    uint32_t lineNumber;
-    char taskName[16];
-    uint32_t faultPC;
-    uint32_t faultSP;
-    uint16_t checksum;
+    uint32_t    magic;
+    FaultType_t faultType;
+    char        fileName[MAX_FILE_NAME_LEN];
+    uint32_t    lineNumber;
+    char        taskName[MAX_TASK_NAME_LEN];
+    uint32_t    faultPC;
+    uint32_t    faultSP;
+    uint32_t    systemTickCount;
+    uint16_t    checksum;
 } CrashReport_t;
+
+/* Giả lập vùng Backup SRAM (STM32 @ 0x40024000) sống sót qua System Reset */
+static CrashReport_t g_nvBackupSramStorage;
+
+static uint16_t CalculateChecksum16(const uint8_t *data, size_t length) {
+    uint16_t sum = 0U;
+    for (size_t i = 0U; i < length; i++) {
+        sum = (uint16_t)(sum + data[i]);
+    }
+    return sum;
+}
+
+void CrashLogger_Clear(void) {
+    memset(&g_nvBackupSramStorage, 0, sizeof(CrashReport_t));
+    g_nvBackupSramStorage.magic = CRASH_MAGIC_CLEARED;
+}
+
+/* TODO: [1] Ghi nhận ngữ cảnh lỗi configASSERT() vào Backup SRAM kèm Checksum16 */
+void CrashLogger_RecordCrash(FaultType_t faultType, const char *file, uint32_t line,
+                             const char *taskName, uint32_t pc, uint32_t sp, uint32_t tick) {
+    CrashReport_t r;
+    memset(&r, 0, sizeof(CrashReport_t));
+
+    r.magic = CRASH_MAGIC_VALID;
+    r.faultType = faultType;
+    if (file != NULL) {
+        strncpy(r.fileName, file, sizeof(r.fileName) - 1U);
+    }
+    r.lineNumber = line;
+    if (taskName != NULL) {
+        strncpy(r.taskName, taskName, sizeof(r.taskName) - 1U);
+    }
+    r.faultPC = pc;
+    r.faultSP = sp;
+    r.systemTickCount = tick;
+
+    size_t dataLen = offsetof(CrashReport_t, checksum);
+    r.checksum = CalculateChecksum16((const uint8_t *)&r, dataLen);
+
+    memcpy(&g_nvBackupSramStorage, &r, sizeof(CrashReport_t));
+}
+
+/* TODO: [2] Đọc và xác thực Checksum báo cáo sau khi MCU Reboot */
+bool CrashLogger_ReadAndVerifyReport(CrashReport_t *outReport, uint16_t *outComputedCrc) {
+    if (outReport == NULL) {
+        return false;
+    }
+    if (g_nvBackupSramStorage.magic != CRASH_MAGIC_VALID) {
+        return false;
+    }
+    size_t dataLen = offsetof(CrashReport_t, checksum);
+    uint16_t computedCrc = CalculateChecksum16((const uint8_t *)&g_nvBackupSramStorage, dataLen);
+    if (outComputedCrc != NULL) {
+        *outComputedCrc = computedCrc;
+    }
+    if (computedCrc != g_nvBackupSramStorage.checksum) {
+        return false;
+    }
+    memcpy(outReport, &g_nvBackupSramStorage, sizeof(CrashReport_t));
+    return true;
+}
+
+static void Print_BackupSramHexDump(const CrashReport_t *r) {
+    const uint8_t *raw = (const uint8_t *)r;
+    printf("  [BACKUP SRAM RAW HEX DUMP (%zu bytes @ %p)]:\n", sizeof(CrashReport_t), (const void *)r);
+    for (size_t i = 0U; i < sizeof(CrashReport_t); i += 16U) {
+        printf("    +0x%02zX : ", i);
+        for (size_t j = 0U; j < 16U; j++) {
+            if (i + j < sizeof(CrashReport_t)) {
+                printf("%02X ", raw[i + j]);
+            } else {
+                printf("   ");
+            }
+        }
+        printf(" | ");
+        for (size_t j = 0U; j < 16U && (i + j < sizeof(CrashReport_t)); j++) {
+            uint8_t c = raw[i + j];
+            printf("%c", (c >= 32U && c <= 126U) ? (char)c : '.');
+        }
+        printf("\n");
+    }
+    printf("\n");
+}
+
+void CrashLogger_DumpDiagnostic(const CrashReport_t *r, uint16_t computedCrc) {
+    static const char *faultNames[] = {
+        "NONE", "CONFIG_ASSERT", "STACK_OVERFLOW", "MALLOC_FAILED", "HARDFAULT_VECTOR"
+    };
+    printf("  +-------------------------------------------------------------+\n");
+    printf("  |          POST-MORTEM CRASH BLACK-BOX REPORT                 |\n");
+    printf("  +-------------------------------------------------------------+\n");
+    printf("  | Magic Header    : 0x%08X (VALID)                        |\n", r->magic);
+    printf("  | Fault Type      : %-18s                        |\n", faultNames[r->faultType]);
+    printf("  | Source CallSite : %s:%-5u                              |\n", r->fileName, r->lineNumber);
+    printf("  | Violating Task  : %-18s                        |\n", r->taskName);
+    printf("  | Registers PC/SP : PC=0x%08X | SP=0x%08X             |\n", r->faultPC, r->faultSP);
+    printf("  | System Tick     : %u ms                                 |\n", r->systemTickCount);
+    printf("  | Checksum16 Audit: Stored=0x%04X vs Computed=0x%04X [MATCH] |\n",
+           r->checksum, computedCrc);
+    printf("  +-------------------------------------------------------------+\n\n");
+}
+
+int main(void) {
+    printf("================================================================================\n");
+    printf("   BÀI TẬP 15.3: HỘP ĐEN CRASH LOGGER TRONG BACKUP SRAM & CHECKSUM AUDIT        \n");
+    printf("================================================================================\n");
+
+    CrashLogger_Clear();
+    CrashReport_t report;
+    uint16_t computed = 0U;
+    assert(!CrashLogger_ReadAndVerifyReport(&report, &computed));
+    printf("[Bước 1] Khởi động nguội (Cold Boot): Backup SRAM trống -> Không có lỗi cũ.\n\n");
+
+    printf("[Bước 2] Giả lập sự cố: Ngắt mức NVIC 2 gọi xQueueSendFromISR() trong CAN_TxTask!\n");
+    printf("         -> Bẫy configASSERT() kích hoạt tại tasks.c:3042 -> Ghi Hộp đen & Reset!\n\n");
+    CrashLogger_RecordCrash(FAULT_CONFIG_ASSERT, "tasks.c", 3042U, "CAN_TxTask",
+                            0x08004128U, 0x20001080U, 45200U);
+
+    Print_BackupSramHexDump(&g_nvBackupSramStorage);
+
+    bool valid = CrashLogger_ReadAndVerifyReport(&report, &computed);
+    assert(valid == true);
+    printf("[Bước 3] MCU thức dậy sau Reset -> Giải mã Hộp đen thành công:\n");
+    CrashLogger_DumpDiagnostic(&report, computed);
+
+    printf("[Bước 4] Thử nghiệm nhiễu RAM / mất pin VBAT (Corrupt PC byte):\n");
+    g_nvBackupSramStorage.faultPC = 0x12345678U;
+    bool validAfterCorrupt = CrashLogger_ReadAndVerifyReport(&report, &computed);
+    printf("  - Stored CRC=0x%04X vs Computed CRC=0x%04X -> Kết quả: %s (Từ chối dữ liệu hỏng!)\n\n",
+           g_nvBackupSramStorage.checksum, computed,
+           validAfterCorrupt ? "ACCEPTED (SAI!)" : "REJECTED (AN TOÀN)");
+    assert(validAfterCorrupt == false);
+
+    printf(">>> [TEST PASSED] bt_15_3_assertion_failure_logger completed successfully.\n");
+    return 0;
+}
 ```
 </details>
+
+---
+
+## 🧭 HƯỚNG DẪN BẮT ĐẦU THỰC HÀNH TRÊN LINUX WSL
+1. Làm toàn bộ phần trắc nghiệm & phân tích tình huống trong tài liệu này trước khi viết code.
+2. Từ thư mục gốc `Bài tập/` trên máy ảo Linux WSL Ubuntu, biên dịch và chạy toàn bộ các bài lab của bài học này bằng lệnh:
+   ```bash
+   # Kiểm tra nhanh môi trường (lần đầu)
+   make check-env
+
+   # Biên dịch & chạy chi tiết kèm sơ đồ/bảng log trực quan trên terminal
+   make run-bai15
+
+   # Chạy kèm AddressSanitizer & UBSan để phát hiện lỗi bộ nhớ/UB
+   make MODE=asan run-bai15
+
+   # Hoặc kiểm tra từng bài riêng trong thư mục Bai_lam/Module_05_Troubleshooting_Production_OTA/Bai_15_Developer_Support_Troubleshooting
+   cd "Bai_lam/Module_05_Troubleshooting_Production_OTA/Bai_15_Developer_Support_Troubleshooting"
+   make run
+   make valgrind
+   ```
+3. Các file mã nguồn cần hoàn thiện:
+   - `bt_15_1_stack_high_watermark_analyzer.c`
+   - `bt_15_2_runtime_stats_profiler.c`
+   - `bt_15_3_assertion_failure_logger.c`
+4. Đảm bảo toàn bộ các bài đọc log phân tích đầy đủ và kết thúc với dòng `>>> [TEST PASSED]`.

@@ -437,3 +437,28 @@ BaseType_t xPacketBufferPush(PacketBuffer_t *pxBuffer, uint32_t ulData) {
 }
 ```
 </details>
+
+---
+
+## 🧭 HƯỚNG DẪN BẮT ĐẦU THỰC HÀNH TRÊN LINUX WSL
+1. Làm toàn bộ phần trắc nghiệm & phân tích tình huống trong tài liệu này trước khi viết code.
+2. Từ thư mục gốc `Bài tập/` trên máy ảo Linux WSL Ubuntu, biên dịch và chạy toàn bộ các bài lab của bài học này bằng lệnh:
+   ```bash
+   # Kiểm tra nhanh môi trường (lần đầu)
+   make check-env
+
+   # Biên dịch & chạy chi tiết kèm sơ đồ/bảng log trực quan trên terminal
+   make run-bai01
+
+   # Chạy kèm AddressSanitizer & UBSan để phát hiện lỗi bộ nhớ/UB
+   make MODE=asan run-bai01
+
+   # Hoặc kiểm tra từng bài riêng trong thư mục Bai_lam/Module_01_Kernel_Core_Fundamentals/Bai_01_RealTime_Fundamentals
+   cd "Bai_lam/Module_01_Kernel_Core_Fundamentals/Bai_01_RealTime_Fundamentals"
+   make run
+   make valgrind
+   ```
+3. Các file mã nguồn cần hoàn thiện:
+   - `bt_1_1_jitter_measurement.c`
+   - `bt_1_2_freertos_coding_style.c`
+4. Đảm bảo toàn bộ các bài đọc log phân tích đầy đủ và kết thúc với dòng `>>> [TEST PASSED]`.

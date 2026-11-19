@@ -439,3 +439,29 @@ bool Mock_Heap2_CanAllocate(const SimpleBlock_t *blocks, uint32_t count, uint32_
   2. Viết hàm kiểm định `bool Validate_HeapRegions(const HeapRegion_t *pxRegions)` kiểm tra:
      - Các vùng nhớ có được sắp xếp theo địa chỉ bắt đầu tăng dần hay không.
      - Phần tử cuối cùng có phải là phần tử chặn `{NULL, 0}` theo đúng chuẩn hay không.
+
+---
+
+## 🧭 HƯỚNG DẪN BẮT ĐẦU THỰC HÀNH TRÊN LINUX WSL
+1. Làm toàn bộ phần trắc nghiệm & phân tích tình huống trong tài liệu này trước khi viết code.
+2. Từ thư mục gốc `Bài tập/` trên máy ảo Linux WSL Ubuntu, biên dịch và chạy toàn bộ các bài lab của bài học này bằng lệnh:
+   ```bash
+   # Kiểm tra nhanh môi trường (lần đầu)
+   make check-env
+
+   # Biên dịch & chạy chi tiết kèm sơ đồ/bảng log trực quan trên terminal
+   make run-bai04
+
+   # Chạy kèm AddressSanitizer & UBSan để phát hiện lỗi bộ nhớ/UB
+   make MODE=asan run-bai04
+
+   # Hoặc kiểm tra từng bài riêng trong thư mục Bai_lam/Module_01_Kernel_Core_Fundamentals/Bai_04_Memory_Management
+   cd "Bai_lam/Module_01_Kernel_Core_Fundamentals/Bai_04_Memory_Management"
+   make run
+   make valgrind
+   ```
+3. Các file mã nguồn cần hoàn thiện:
+   - `bt_4_1_heap4_coalescing_sim.c`
+   - `bt_4_2_heap2_fragmentation_trap.c`
+   - `bt_4_3_heap5_multiregion_setup.c`
+4. Đảm bảo toàn bộ các bài đọc log phân tích đầy đủ và kết thúc với dòng `>>> [TEST PASSED]`.

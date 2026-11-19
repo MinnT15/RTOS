@@ -542,15 +542,26 @@ void Dispatcher_FeedByte(Dispatcher_t *d, uint8_t byte) {
 
 ---
 
-## 🧭 HƯỚNG DẪN BẮT ĐẦU THỰC HÀNH
-1. Mở file [Bai_10_Sharing_Hardware_Peripherals_Exercises.md](./Bai_10_Sharing_Hardware_Peripherals_Exercises.md) và tự mình làm toàn bộ 18 câu trắc nghiệm.
-2. Di chuyển vào thư mục code: `cd "Bai_lam/Module_03_Hardware_Peripherals_ISR_Drivers/Bai_10_Sharing_Hardware_Peripherals"`
-3. Lần lượt hoàn thiện các file:
+## 🧭 HƯỚNG DẪN BẮT ĐẦU THỰC HÀNH TRÊN LINUX WSL
+1. Làm toàn bộ phần trắc nghiệm & phân tích tình huống trong tài liệu này trước khi viết code.
+2. Từ thư mục gốc `Bài tập/` trên máy ảo Linux WSL Ubuntu, biên dịch và chạy toàn bộ các bài lab của bài học này bằng lệnh:
+   ```bash
+   # Kiểm tra nhanh môi trường (lần đầu)
+   make check-env
+
+   # Biên dịch & chạy chi tiết kèm sơ đồ/bảng log trực quan trên terminal
+   make run-bai10
+
+   # Chạy kèm AddressSanitizer & UBSan để phát hiện lỗi bộ nhớ/UB
+   make MODE=asan run-bai10
+
+   # Hoặc kiểm tra từng bài riêng trong thư mục Bai_lam/Module_03_Hardware_Peripherals_ISR_Drivers/Bai_10_Sharing_Hardware_Peripherals
+   cd "Bai_lam/Module_03_Hardware_Peripherals_ISR_Drivers/Bai_10_Sharing_Hardware_Peripherals"
+   make run
+   make valgrind
+   ```
+3. Các file mã nguồn cần hoàn thiện:
    - `bt_10_1_atomic_transaction_lock.c`
    - `bt_10_2_multi_task_stream_buffer.c`
    - `bt_10_3_shared_peripheral_dispatcher.c`
-4. Biên dịch và kiểm tra tính đúng đắn với GCC:
-   ```powershell
-   gcc -Wall -Wextra -std=c11 bt_10_1_atomic_transaction_lock.c -o test.exe; .\test.exe
-   ```
-5. Đảm bảo toàn bộ test case đều hiển thị `>>> [TEST PASSED]`.
+4. Đảm bảo toàn bộ các bài đọc log phân tích đầy đủ và kết thúc với dòng `>>> [TEST PASSED]`.

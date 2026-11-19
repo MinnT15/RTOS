@@ -1,148 +1,150 @@
 /**
  * @file bt_14_3_smp_spin_lock_multi_core.c
- * @brief Bài tập 14.3: Mô Phỏng Khóa Xoay Đa Lõi (SMP Spinlock) Trong FreeRTOS SMP
- * 
- * LỆNH BIÊN DỊCH:
- *   gcc -Wall -Wextra -std=c11 bt_14_3_smp_spin_lock_multi_core.c -o bt_14_3.exe
- *   .\bt_14_3.exe
+ * @brief Bài tập 14.3: Khóa Xoay Đa Lõi SMP Spinlock Thực Tế Với POSIX Multi-Thread [⭐⭐⭐]
+ *
+ * LỆNH BIÊN DỊCH TRÊN LINUX WSL:
+ *   gcc -Wall -Wextra -Wpedantic -std=c11 -pthread bt_14_3_smp_spin_lock_multi_core.c -o bt_14_3
  */
 
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
+#include <stdatomic.h>
+#include <pthread.h>
 #include <assert.h>
 
-#define SPINLOCK_FREE_VAL (0U)
-#define SPINLOCK_LOCKED   (1U)
-#define NO_CORE_OWNER     (0xFFFFFFFFU)
+#define SPINLOCK_FREE_VAL   (0U)
+#define SPINLOCK_LOCKED     (1U)
+#define NO_CORE_OWNER       (0xFFFFFFFFU)
+#define ITERATIONS_PER_CORE (250000U)
 
 /**
- * @brief Cấu trúc mô phỏng khóa xoay Spinlock đa lõi
+ * @brief Cấu trúc khóa xoay Atomic SMP Spinlock chuẩn đa lõi thật
  */
 typedef struct {
-    volatile uint32_t lockFlag;        // Cờ khóa nguyên tử (0 = Free, 1 = Locked)
-    uint32_t          ownerCoreId;     // Định danh lõi sở hữu hiện tại
-    uint32_t          contentionCount; // Biến đếm số chu kỳ lõi phải quay vòng chờ
+    atomic_uint     lockFlag;        /* 0 = Free, 1 = Locked (Thao tác nguyên tử TAS/CAS) */
+    uint32_t        ownerCoreId;     /* Lõi đang giữ khóa */
+    atomic_uint_fast64_t contentionCount; /* Số chu kỳ spinning va chạm thật giữa 2 lõi */
 } SmpSpinLock_t;
 
 void SpinLock_Init(SmpSpinLock_t *sl) {
     assert(sl != NULL);
-    sl->lockFlag = SPINLOCK_FREE_VAL;
+    atomic_init(&sl->lockFlag, SPINLOCK_FREE_VAL);
     sl->ownerCoreId = NO_CORE_OWNER;
-    sl->contentionCount = 0U;
+    atomic_init(&sl->contentionCount, 0U);
 }
 
-/**
- * @brief Lõi chiếm giữ khóa xoay Spinlock
- * 
- * TODO: [1] Kiểm tra con trỏ sl khác NULL
- * TODO: [2] Vòng lặp chờ tích cực (Spinning loop):
- *           Trong khi lockFlag != SPINLOCK_FREE_VAL:
- *           - Tăng contentionCount++ (Mô phỏng chu kỳ quay vòng chờ)
- *           - Khi lõi sở hữu nhả khóa (lockFlag == 0) -> thoát khỏi vòng lặp
- * TODO: [3] Chiếm khóa nguyên tử: sl->lockFlag = SPINLOCK_LOCKED, sl->ownerCoreId = coreId
- */
+/* TODO: [1] Chiếm khóa xoay nguyên tử bằng Test-And-Set (atomic_exchange_explicit acquire) */
 void SpinLock_Acquire(SmpSpinLock_t *sl, uint32_t coreId) {
     assert(sl != NULL);
-
-    /* TODO: [2] Vòng lặp Spinloop chờ cờ khóa rảnh */
-    while (sl->lockFlag != SPINLOCK_FREE_VAL) {
-        sl->contentionCount++;
+    while (atomic_exchange_explicit(&sl->lockFlag, SPINLOCK_LOCKED, memory_order_acquire) != SPINLOCK_FREE_VAL) {
+        atomic_fetch_add_explicit(&sl->contentionCount, 1U, memory_order_relaxed);
+        /* Đọc thô trước (TTAS optimization) giúp giảm bão nghẽn bus Cache Coherency */
+        while (atomic_load_explicit(&sl->lockFlag, memory_order_relaxed) != SPINLOCK_FREE_VAL) {
+            atomic_fetch_add_explicit(&sl->contentionCount, 1U, memory_order_relaxed);
+        }
     }
-
-    /* TODO: [3] Khóa nguyên tử */
-    sl->lockFlag = SPINLOCK_LOCKED;
     sl->ownerCoreId = coreId;
 }
 
-/**
- * @brief Lõi giải phóng khóa xoay Spinlock
- * 
- * TODO: [4] Kiểm tra con trỏ sl khác NULL
- * TODO: [5] Thẩm định quyền sở hữu: Chỉ cho phép mở khóa nếu sl->ownerCoreId == coreId
- * TODO: [6] Đặt sl->ownerCoreId = NO_CORE_OWNER và sl->lockFlag = SPINLOCK_FREE_VAL
- */
-void SpinLock_Release(SmpSpinLock_t *sl, uint32_t coreId) {
+/* TODO: [2] Giải phóng khóa xoay (Kiểm tra chủ sở hữu trước khi nhả với memory_order_release) */
+bool SpinLock_Release(SmpSpinLock_t *sl, uint32_t coreId) {
     assert(sl != NULL);
-
-    /* TODO: [5], [6] Mở khóa an toàn */
-    if (sl->lockFlag == SPINLOCK_LOCKED && sl->ownerCoreId == coreId) {
+    if ((atomic_load_explicit(&sl->lockFlag, memory_order_relaxed) == SPINLOCK_LOCKED) &&
+        (sl->ownerCoreId == coreId)) {
         sl->ownerCoreId = NO_CORE_OWNER;
-        sl->lockFlag = SPINLOCK_FREE_VAL;
+        atomic_store_explicit(&sl->lockFlag, SPINLOCK_FREE_VAL, memory_order_release);
+        return true;
     }
+    return false;
 }
 
 /* =========================================================================
- * BỘ TEST HARNESS TỰ ĐỘNG (AUTOMATED TEST HARNESS)
+ * MÔ PHỎNG 2 LÕI CPU CHẠY SONG SONG THẬT BẰNG LINUX POSIX THREADS
  * ========================================================================= */
+typedef struct {
+    uint32_t       coreId;
+    bool           useLock;
+    SmpSpinLock_t *pSpinLock;
+    uint32_t      *pSharedCounter;
+} CoreWorkerArgs_t;
+
+static void *Core_WorkerThread(void *arg) {
+    CoreWorkerArgs_t *ctx = (CoreWorkerArgs_t *)arg;
+    volatile uint32_t *pCounter = ctx->pSharedCounter;
+
+    for (uint32_t i = 0U; i < ITERATIONS_PER_CORE; i++) {
+        if (ctx->useLock) {
+            SpinLock_Acquire(ctx->pSpinLock, ctx->coreId);
+            uint32_t tmp = *pCounter;
+            *pCounter = tmp + 1U;
+            SpinLock_Release(ctx->pSpinLock, ctx->coreId);
+        } else {
+            /* Cố tình thực hiện Read-Modify-Write không khóa trên 2 lõi song song thật! */
+            uint32_t tmp = *pCounter;
+            *pCounter = tmp + 1U;
+        }
+    }
+    return NULL;
+}
+
 int main(void) {
-    printf("=== BÀI TẬP 14.3: KIỂM CHỨNG KHÓA XOAY ĐA LÕI SMP SPINLOCK ===\n\n");
+    printf("================================================================================\n");
+    printf("   BÀI TẬP 14.3: KHÓA XOAY ĐA LÕI SMP SPINLOCK VỚI 2 LUỒNG SONG SONG THẬT       \n");
+    printf("================================================================================\n");
+    printf("Mô hình: 2 POSIX Threads thật đại diện Core 0 & Core 1 cùng cộng dồn g_Counter.\n");
+    printf("         Mỗi lõi tăng %u lần -> Tổng kỳ vọng = %u.\n\n",
+           ITERATIONS_PER_CORE, ITERATIONS_PER_CORE * 2U);
 
     SmpSpinLock_t spinLock;
     SpinLock_Init(&spinLock);
 
-    /* [Test 1] Khóa và mở khóa thông thường trên Core 0 */
-    printf("[Test 1] Core 0 chiếm và nhả Spinlock:\n");
+    /* [Test 1] Kiểm tra bảo vệ quyền sở hữu (Ownership Check) */
+    printf("[Test 1] Kiểm tra khóa xoay & bảo vệ quyền sở hữu OwnerCore:\n");
     SpinLock_Acquire(&spinLock, 0U);
-    printf("  - Core 0 chiếm khóa: lockFlag = %u, Owner = Core %u\n", 
-           spinLock.lockFlag, spinLock.ownerCoreId);
-    assert(spinLock.lockFlag == SPINLOCK_LOCKED);
-    assert(spinLock.ownerCoreId == 0U);
+    bool illegal = SpinLock_Release(&spinLock, 1U); /* Core 1 cố mở khóa của Core 0 */
+    printf("  - Core 0 đang khóa -> Core 1 cố Release(): %s (Kỳ vọng: TỪ CHỐI)\n",
+           illegal ? "MỞ ĐƯỢC" : "TỪ CHỐI");
+    assert(illegal == false);
+    assert(SpinLock_Release(&spinLock, 0U) == true);
+    printf("  - Core 0 Release() đúng chủ sở hữu       : THÀNH CÔNG\n\n");
 
-    SpinLock_Release(&spinLock, 0U);
-    printf("  - Core 0 nhả khóa: lockFlag = %u\n", spinLock.lockFlag);
-    assert(spinLock.lockFlag == SPINLOCK_FREE_VAL);
-    assert(spinLock.ownerCoreId == NO_CORE_OWNER);
+    /* [Test 2] Thí nghiệm Race Condition thật trên 2 Core KHÔNG khóa */
+    uint32_t unprotectedCounter = 0U;
+    CoreWorkerArgs_t noLock0 = { 0U, false, &spinLock, &unprotectedCounter };
+    CoreWorkerArgs_t noLock1 = { 1U, false, &spinLock, &unprotectedCounter };
+    pthread_t th0, th1;
+    pthread_create(&th0, NULL, Core_WorkerThread, &noLock0);
+    pthread_create(&th1, NULL, Core_WorkerThread, &noLock1);
+    pthread_join(th0, NULL);
+    pthread_join(th1, NULL);
 
-    /* [Test 2] Thử nghiệm mở khóa trái phép từ Core khác */
-    printf("\n[Test 2] Thử nghiệm Core 1 cố mở khóa của Core 0:\n");
-    SpinLock_Acquire(&spinLock, 0U); // Core 0 đang giữ khóa
-    SpinLock_Release(&spinLock, 1U); // Core 1 cố mở khóa!
+    uint32_t expectedTotal = ITERATIONS_PER_CORE * 2U;
+    printf("[Test 2] Chạy song song 2 Core KHÔNG Spinlock (Real Multi-Core Race):\n");
+    printf("  - Kỳ vọng : %u\n", expectedTotal);
+    printf("  - Thực tế : %u (Thất thoát %u lần cộng do Read-Modify-Write đè nhau!)\n\n",
+           unprotectedCounter,
+           (expectedTotal >= unprotectedCounter) ? (expectedTotal - unprotectedCounter) : 0U);
 
-    printf("  - Trạng thái sau lệnh mở khóa trái phép: lockFlag = %u (Kỳ vọng: VẪN KHÓA)\n", spinLock.lockFlag);
-    assert(spinLock.lockFlag == SPINLOCK_LOCKED); // Vẫn khóa an toàn!
-    assert(spinLock.ownerCoreId == 0U);
-    SpinLock_Release(&spinLock, 0U);
+    /* [Test 3] Chạy song song 2 Core CÓ bảo vệ Atomic SMP Spinlock */
+    SpinLock_Init(&spinLock);
+    uint32_t protectedCounter = 0U;
+    CoreWorkerArgs_t lock0 = { 0U, true, &spinLock, &protectedCounter };
+    CoreWorkerArgs_t lock1 = { 1U, true, &spinLock, &protectedCounter };
+    pthread_create(&th0, NULL, Core_WorkerThread, &lock0);
+    pthread_create(&th1, NULL, Core_WorkerThread, &lock1);
+    pthread_join(th0, NULL);
+    pthread_join(th1, NULL);
 
-    /* [Test 3] Mô phỏng tranh chấp (Spinlock Contention Simulation) */
-    printf("\n[Test 3] Mô phỏng bảo vệ biến đếm toàn cục g_SharedCounter:\n");
-    uint32_t g_SharedCounter = 0U;
-    const uint32_t iterationsPerCore = 500U;
+    uint64_t spins = atomic_load(&spinLock.contentionCount);
+    printf("[Test 3] Chạy song song 2 Core CÓ bảo vệ Atomic SMP Spinlock (TAS + Acquire/Release):\n");
+    printf("  - Kỳ vọng            : %u\n", expectedTotal);
+    printf("  - Thực tế            : %u (CHÍNH XÁC 100%% — 0 BYTE THẤT THOÁT!)\n", protectedCounter);
+    printf("  - Spinning Contention: %llu chu kỳ 2 lõi phải quay vòng chờ nhau\n\n",
+           (unsigned long long)spins);
 
-    // Giả lập 2 Core cùng tăng biến đếm xen kẽ có bảo vệ Spinlock
-    for (uint32_t i = 0; i < iterationsPerCore; i++) {
-        // Core 0 thao tác
-        SpinLock_Acquire(&spinLock, 0U);
-        g_SharedCounter++;
-        SpinLock_Release(&spinLock, 0U);
+    assert(protectedCounter == expectedTotal);
 
-        // Core 1 thao tác
-        SpinLock_Acquire(&spinLock, 1U);
-        g_SharedCounter++;
-        SpinLock_Release(&spinLock, 1U);
-    }
-
-    printf("  - Tổng giá trị biến đếm: %u (Kỳ vọng: %u)\n", 
-           g_SharedCounter, iterationsPerCore * 2U);
-    assert(g_SharedCounter == 1000U);
-
-    /* [Test 4] Thử nghiệm tình huống tranh chấp (Contention) */
-    printf("\n[Test 4] Kiểm tra cờ ghi nhận chu kỳ tranh chấp (Contention Cycles):\n");
-    // Core 0 giữ khóa
-    SpinLock_Acquire(&spinLock, 0U);
-
-    // Giả lập Core 1 cố lấy khóa nhưng bị vướng và quay vòng 3 chu kỳ
-    spinLock.contentionCount += 3U; // Giả lập spin
-
-    // Core 0 nhả khóa
-    SpinLock_Release(&spinLock, 0U);
-
-    // Core 1 chiếm được
-    SpinLock_Acquire(&spinLock, 1U);
-    printf("  - Số chu kỳ Core 1 phải quay vòng chờ (Spinning cycles): %u\n", spinLock.contentionCount);
-    assert(spinLock.contentionCount >= 3U);
-    SpinLock_Release(&spinLock, 1U);
-
-    printf("\n>>> [TEST PASSED] Cơ chế khóa xoay SMP Spinlock bảo vệ Critical Section đa lõi hoàn hảo 100%%!\n");
+    printf(">>> [TEST PASSED] Khóa xoay đa lõi SMP Spinlock bảo vệ song song thật hoàn hảo 100%%!\n");
     return 0;
 }

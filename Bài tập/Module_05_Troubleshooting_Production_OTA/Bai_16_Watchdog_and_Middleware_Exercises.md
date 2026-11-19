@@ -411,7 +411,13 @@ Học viên làm bài trực tiếp trong thư mục `Bai_lam/Module_05_Troubles
 <details>
 <summary><b>👉 Xem mã nguồn tham khảo &amp; Giải pháp (Solution)</b></summary>
 
+#### 💻 Mã Nguồn Hoàn Chỉnh (`bt_16_1_multi_task_software_watchdog.c`)
 ```c
+/**
+ * @file bt_16_1_multi_task_software_watchdog.c
+ * @brief Bộ giám sát sức khỏe đa nhiệm (Multi-Task Software Watchdog Supervisor).
+ */
+
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
@@ -426,12 +432,136 @@ typedef enum {
 } WatchdogStatus_t;
 
 typedef struct {
-    uint8_t taskId;
-    char taskName[16];
-    uint32_t maxAllowedTicks;
-    uint32_t remainingTicks;
-    bool isRegistered;
+    uint8_t  taskId;
+    char     taskName[16];
+    uint32_t maxAllowedTimeoutMs;
+    uint32_t remainingTimeMs;
+    bool     isRegistered;
 } TaskWatchdogEntry_t;
+
+typedef struct {
+    TaskWatchdogEntry_t tasks[NUM_MONITORED_TASKS];
+    uint8_t  failedTaskId;
+    uint32_t totalKicks;
+    uint32_t totalElapsedMs;
+} SoftwareWatchdogSupervisor_t;
+
+void Watchdog_Init(SoftwareWatchdogSupervisor_t *wdt) {
+    if (wdt == NULL) {
+        return;
+    }
+    memset(wdt, 0, sizeof(SoftwareWatchdogSupervisor_t));
+    wdt->failedTaskId = 0xFFU;
+}
+
+bool Watchdog_RegisterTask(SoftwareWatchdogSupervisor_t *wdt, uint8_t taskId, const char *name, uint32_t timeoutMs) {
+    if ((wdt == NULL) || (taskId >= NUM_MONITORED_TASKS) || (name == NULL) || (timeoutMs == 0U)) {
+        return false;
+    }
+    TaskWatchdogEntry_t *entry = &wdt->tasks[taskId];
+    entry->taskId = taskId;
+    strncpy(entry->taskName, name, sizeof(entry->taskName) - 1U);
+    entry->taskName[sizeof(entry->taskName) - 1U] = '\0';
+    entry->maxAllowedTimeoutMs = timeoutMs;
+    entry->remainingTimeMs = timeoutMs;
+    entry->isRegistered = true;
+    return true;
+}
+
+/* TODO: [1] Worker Task báo cáo sinh tồn để nạp lại bộ đếm thời hạn của riêng nó */
+void Watchdog_TaskCheckIn(SoftwareWatchdogSupervisor_t *wdt, uint8_t taskId) {
+    if ((wdt == NULL) || (taskId >= NUM_MONITORED_TASKS)) {
+        return;
+    }
+    if (wdt->tasks[taskId].isRegistered) {
+        wdt->tasks[taskId].remainingTimeMs = wdt->tasks[taskId].maxAllowedTimeoutMs;
+    }
+}
+
+/* TODO: [2] Supervisor Task định kỳ kiểm tra toàn bộ 4 Task trước khi quyết định kick IWDG */
+WatchdogStatus_t Watchdog_Supervisor_Step(SoftwareWatchdogSupervisor_t *wdt, uint32_t elapsedMs) {
+    if (wdt == NULL) {
+        return WATCHDOG_TRIGGER_RESET;
+    }
+    wdt->totalElapsedMs += elapsedMs;
+
+    for (uint8_t i = 0U; i < NUM_MONITORED_TASKS; i++) {
+        TaskWatchdogEntry_t *entry = &wdt->tasks[i];
+        if (entry->isRegistered) {
+            if (entry->remainingTimeMs <= elapsedMs) {
+                entry->remainingTimeMs = 0U;
+                wdt->failedTaskId = entry->taskId;
+                return WATCHDOG_TRIGGER_RESET;
+            } else {
+                entry->remainingTimeMs -= elapsedMs;
+            }
+        }
+    }
+
+    wdt->totalKicks++;
+    return WATCHDOG_KICK_OK;
+}
+
+static void Print_WatchdogRow(const SoftwareWatchdogSupervisor_t *wdt, const char *eventNote, WatchdogStatus_t st) {
+    printf("  @%3ums | %-24s | %4ums | %4ums | %4ums | %4ums | %s\n",
+           wdt->totalElapsedMs, eventNote,
+           wdt->tasks[0].remainingTimeMs, wdt->tasks[1].remainingTimeMs,
+           wdt->tasks[2].remainingTimeMs, wdt->tasks[3].remainingTimeMs,
+           (st == WATCHDOG_KICK_OK) ? "IWDG_KICK" : ">>> RESET!!");
+}
+
+int main(void) {
+    printf("================================================================================\n");
+    printf("   BÀI TẬP 16.1: BỘ GIÁM SÁT MULTI-TASK SOFTWARE WATCHDOG SUPERVISOR (MISRA C) \n");
+    printf("================================================================================\n");
+    printf("Quy tắc Vàng: Chỉ duy nhất Supervisor Task được gọi HAL_IWDG_Refresh().\n");
+    printf("Deadlines   : Task0 FastSensor(100ms) | Task1 Motor(200ms) | Task2 GUI(500ms) | Task3 Cloud(1000ms)\n\n");
+
+    SoftwareWatchdogSupervisor_t wdt;
+    Watchdog_Init(&wdt);
+    assert(Watchdog_RegisterTask(&wdt, 0U, "FastSensor",   100U));
+    assert(Watchdog_RegisterTask(&wdt, 1U, "MotorControl", 200U));
+    assert(Watchdog_RegisterTask(&wdt, 2U, "GuiDisplay",   500U));
+    assert(Watchdog_RegisterTask(&wdt, 3U, "CloudSync",    1000U));
+
+    printf("  Time  | Sự kiện trong chu kỳ     | T0(ms) | T1(ms) | T2(ms) | T3(ms) | Hành động IWDG\n");
+    printf("  ------------------------------------------------------------------------------------\n");
+
+    /* Nhịp bình thường: Task 0 check-in mỗi 50ms; Task 1 mỗi 100ms; Task 2 & 3 check-in mỗi 150ms */
+    for (int cycle = 0; cycle < 3; cycle++) {
+        Watchdog_TaskCheckIn(&wdt, 0U);
+        if (cycle % 2 == 0) { Watchdog_TaskCheckIn(&wdt, 1U); }
+        if (cycle == 0)     { Watchdog_TaskCheckIn(&wdt, 2U); Watchdog_TaskCheckIn(&wdt, 3U); }
+        WatchdogStatus_t st = Watchdog_Supervisor_Step(&wdt, 50U);
+        Print_WatchdogRow(&wdt, "All tasks healthy", st);
+        assert(st == WATCHDOG_KICK_OK);
+    }
+
+    /* Reset nhẹ chu kỳ mới và tiêm lỗi Deadlock vào Task 0 (FastSensor ngừng check-in!) */
+    Watchdog_TaskCheckIn(&wdt, 0U);
+    Watchdog_TaskCheckIn(&wdt, 1U);
+    Watchdog_TaskCheckIn(&wdt, 2U);
+    Watchdog_TaskCheckIn(&wdt, 3U);
+
+    WatchdogStatus_t st1 = Watchdog_Supervisor_Step(&wdt, 50U);
+    Print_WatchdogRow(&wdt, "T0 TREO (Mat CheckIn #1)", st1);
+    assert(st1 == WATCHDOG_KICK_OK);
+
+    Watchdog_TaskCheckIn(&wdt, 1U);
+    Watchdog_TaskCheckIn(&wdt, 2U);
+    Watchdog_TaskCheckIn(&wdt, 3U);
+    WatchdogStatus_t st2 = Watchdog_Supervisor_Step(&wdt, 60U);
+    Print_WatchdogRow(&wdt, "T0 QUA HAN (110 > 100ms)", st2);
+    printf("  ------------------------------------------------------------------------------------\n\n");
+
+    assert(st2 == WATCHDOG_TRIGGER_RESET);
+    assert(wdt.failedTaskId == 0U);
+    printf("[CHẨN ĐOÁN]: Ngắt nuôi IWDG ngay lập tức! Tội phạm bị khóa: Task ID=%u (%s)\n\n",
+           wdt.failedTaskId, wdt.tasks[wdt.failedTaskId].taskName);
+
+    printf(">>> [TEST PASSED] bt_16_1_multi_task_software_watchdog completed successfully.\n");
+    return 0;
+}
 ```
 </details>
 
@@ -450,15 +580,22 @@ typedef struct {
 <details>
 <summary><b>👉 Xem mã nguồn tham khảo &amp; Giải pháp (Solution)</b></summary>
 
+#### 💻 Mã Nguồn Hoàn Chỉnh (`bt_16_2_filesystem_gatekeeper_logger.c`)
 ```c
+/**
+ * @file bt_16_2_filesystem_gatekeeper_logger.c
+ * @brief Kiến trúc File System Gatekeeper (Mutex-Free LittleFS Copy-on-Write Logger).
+ */
+
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
 #include <assert.h>
 
-#define FS_QUEUE_CAPACITY   8U
+#define FS_QUEUE_CAPACITY   6U
 #define MAX_PAYLOAD_LEN     32U
+#define MAX_FILENAME_LEN    16U
 
 typedef enum {
     LOG_LEVEL_INFO = 0,
@@ -468,10 +605,111 @@ typedef enum {
 
 typedef struct {
     LogLevel_t level;
-    char fileName[16];
-    uint32_t timestampMs;
-    char payload[MAX_PAYLOAD_LEN];
+    char       fileName[MAX_FILENAME_LEN];
+    uint32_t   timestampMs;
+    char       payload[MAX_PAYLOAD_LEN];
 } LogMessage_t;
+
+typedef struct {
+    LogMessage_t queue[FS_QUEUE_CAPACITY];
+    uint8_t  head;
+    uint8_t  tail;
+    uint8_t  count;
+    uint32_t totalLogged;
+    uint32_t totalDropped;
+    uint32_t flashWriteGeneration;
+} FSGatekeeperManager_t;
+
+void FS_Logger_Init(FSGatekeeperManager_t *mgr) {
+    if (mgr != NULL) {
+        memset(mgr, 0, sizeof(FSGatekeeperManager_t));
+    }
+}
+
+/* TODO: [1] Worker Task đẩy thông điệp vào Queue (Non-Blocking Drop nếu đầy) */
+bool FS_Logger_Post(FSGatekeeperManager_t *mgr, const LogMessage_t *msg) {
+    if ((mgr == NULL) || (msg == NULL)) {
+        return false;
+    }
+    if (mgr->count >= FS_QUEUE_CAPACITY) {
+        mgr->totalDropped++;
+        return false;
+    }
+    mgr->queue[mgr->tail] = *msg;
+    mgr->tail = (uint8_t)((mgr->tail + 1U) % FS_QUEUE_CAPACITY);
+    mgr->count++;
+    return true;
+}
+
+/* TODO: [2] Duy nhất FS_Gatekeeper_Task tuần tự ghi xuống Flash theo chuẩn Copy-on-Write */
+bool FS_Gatekeeper_Task_Step(FSGatekeeperManager_t *mgr, LogMessage_t *outWrittenMsg) {
+    if ((mgr == NULL) || (mgr->count == 0U)) {
+        return false;
+    }
+    LogMessage_t msg = mgr->queue[mgr->head];
+    mgr->head = (uint8_t)((mgr->head + 1U) % FS_QUEUE_CAPACITY);
+    mgr->count--;
+    mgr->totalLogged++;
+    mgr->flashWriteGeneration++; /* Mô phỏng tăng thế hệ block CoW (Copy-on-Write) */
+    if (outWrittenMsg != NULL) {
+        *outWrittenMsg = msg;
+    }
+    return true;
+}
+
+static const char *prvLevelStr(LogLevel_t lvl) {
+    if (lvl == LOG_LEVEL_INFO) { return "INFO"; }
+    if (lvl == LOG_LEVEL_WARN) { return "WARN"; }
+    return "ERR ";
+}
+
+int main(void) {
+    printf("================================================================================\n");
+    printf("   BÀI TẬP 16.2: FILE SYSTEM GATEKEEPER LOGGER (MUTEX-FREE + LITTLEFS COW)      \n");
+    printf("================================================================================\n");
+    printf("Kiến trúc: Multi-Producers -> [Queue 6 slots] -> Single FS_Gatekeeper -> Flash\n\n");
+
+    FSGatekeeperManager_t fsMgr;
+    FS_Logger_Init(&fsMgr);
+
+    LogMessage_t m1 = { LOG_LEVEL_INFO,  "system.log", 1000U, "System boot OK" };
+    LogMessage_t m2 = { LOG_LEVEL_WARN,  "sensor.log", 1200U, "Temp high: 75C" };
+    LogMessage_t m3 = { LOG_LEVEL_ERROR, "motor.log",  1500U, "Overcurrent detected" };
+
+    printf("[GIAI ĐOẠN 1 — CÁC TASK GỬI BẢN TIN VÀO HÀNG ĐỢI]:\n");
+    assert(FS_Logger_Post(&fsMgr, &m1));
+    assert(FS_Logger_Post(&fsMgr, &m2));
+    assert(FS_Logger_Post(&fsMgr, &m3));
+    printf("  - Đã nạp 3 bản tin vào Queue (Head=%u, Tail=%u, Count=%u/%u)\n\n",
+           fsMgr.head, fsMgr.tail, fsMgr.count, FS_QUEUE_CAPACITY);
+
+    printf("[GIAI ĐOẠN 2 — FS_GATEKEEPER TUẦN TỰ GHI ATOMIC COPY-ON-WRITE XUỐNG FLASH]:\n");
+    printf("  Commit# | Time(ms) | Level | File Target  | Payload Ghi Thành Công\n");
+    printf("  ----------------------------------------------------------------------------\n");
+    LogMessage_t processed;
+    while (FS_Gatekeeper_Task_Step(&fsMgr, &processed)) {
+        printf("   CoW#%2u | %6u   | %s  | %-12s | \"%s\"\n",
+               fsMgr.flashWriteGeneration, processed.timestampMs,
+               prvLevelStr(processed.level), processed.fileName, processed.payload);
+    }
+    printf("  ----------------------------------------------------------------------------\n\n");
+    assert(fsMgr.totalLogged == 3U && fsMgr.count == 0U);
+
+    printf("[GIAI ĐOẠN 3 — BÃO LOG (FLOOD TEST) CHỐNG TRÀN RAM/HEAP]:\n");
+    for (uint8_t i = 0U; i < FS_QUEUE_CAPACITY; i++) {
+        LogMessage_t flood = { LOG_LEVEL_INFO, "flood.log", 2000U + i, "Flood packet" };
+        assert(FS_Logger_Post(&fsMgr, &flood));
+    }
+    LogMessage_t overflowMsg = { LOG_LEVEL_WARN, "flood.log", 3000U, "Overflow packet" };
+    bool overflowAccepted = FS_Logger_Post(&fsMgr, &overflowMsg);
+    printf("  - Queue đầy (%u/%u) -> Gửi bản tin thứ 7: %s (Dropped=%u, Bảo vệ RAM 100%%!)\n\n",
+           fsMgr.count, FS_QUEUE_CAPACITY, overflowAccepted ? "ACCEPTED" : "DROPPED SAFELY",
+           fsMgr.totalDropped);
+
+    assert(!overflowAccepted && fsMgr.totalDropped == 1U);
+    printf(">>> [TEST PASSED] bt_16_2_filesystem_gatekeeper_logger completed successfully.\n");
+    return 0;
+}
 ```
 </details>
 
@@ -491,14 +729,21 @@ typedef struct {
 <details>
 <summary><b>👉 Xem mã nguồn tham khảo &amp; Giải pháp (Solution)</b></summary>
 
+#### 💻 Mã Nguồn Hoàn Chỉnh (`bt_16_3_lwip_packet_drop_oom_guard.c`)
 ```c
+/**
+ * @file bt_16_3_lwip_packet_drop_oom_guard.c
+ * @brief Hàng đợi mạng chống cạn kiệt bộ nhớ (LwIP OOM Guard & Priority Eviction).
+ */
+
 #include <stdio.h>
 #include <stdint.h>
 #include <stdbool.h>
 #include <string.h>
 #include <assert.h>
 
-#define MAX_NETWORK_QUEUE_SIZE  5U
+#define MAX_NETWORK_QUEUE_SIZE  4U
+#define MAX_PACKET_PAYLOAD_SIZE 32U
 
 typedef enum {
     PKT_TYPE_TELEMETRY = 0,
@@ -506,10 +751,163 @@ typedef enum {
 } PacketType_t;
 
 typedef struct {
-    uint32_t sequenceId;
+    uint32_t     sequenceId;
     PacketType_t type;
-    uint16_t payloadLength;
-    uint8_t payload[32];
+    uint16_t     payloadLength;
+    char         payload[MAX_PACKET_PAYLOAD_SIZE];
 } NetworkPacket_t;
+
+typedef struct {
+    NetworkPacket_t packets[MAX_NETWORK_QUEUE_SIZE];
+    uint8_t  count;
+    uint32_t totalTelemetryDropped;
+    uint32_t totalControlDropped;
+    uint32_t totalEnqueued;
+} NetworkQueueManager_t;
+
+void NetworkQueue_Init(NetworkQueueManager_t *mgr) {
+    if (mgr != NULL) {
+        memset(mgr, 0, sizeof(NetworkQueueManager_t));
+    }
+}
+
+/* TODO: [1] Chính sách Drop khi đầy hàng đợi:
+ *       - TELEMETRY: Tail Drop gói mới.
+ *       - CRITICAL_CONTROL: Tìm & trục xuất (Evict) gói TELEMETRY cũ nhất để nhường chỗ! */
+bool NetworkQueue_Enqueue(NetworkQueueManager_t *mgr, const NetworkPacket_t *pkt) {
+    if ((mgr == NULL) || (pkt == NULL)) {
+        return false;
+    }
+
+    if (mgr->count < MAX_NETWORK_QUEUE_SIZE) {
+        mgr->packets[mgr->count] = *pkt;
+        mgr->count++;
+        mgr->totalEnqueued++;
+        return true;
+    }
+
+    if (pkt->type == PKT_TYPE_TELEMETRY) {
+        mgr->totalTelemetryDropped++;
+        return false;
+    }
+
+    int8_t evictIndex = -1;
+    for (uint8_t i = 0U; i < mgr->count; i++) {
+        if (mgr->packets[i].type == PKT_TYPE_TELEMETRY) {
+            evictIndex = (int8_t)i;
+            break;
+        }
+    }
+
+    if (evictIndex >= 0) {
+        mgr->totalTelemetryDropped++;
+        for (uint8_t i = (uint8_t)evictIndex; i < (mgr->count - 1U); i++) {
+            mgr->packets[i] = mgr->packets[i + 1U];
+        }
+        mgr->packets[mgr->count - 1U] = *pkt;
+        mgr->totalEnqueued++;
+        return true;
+    }
+
+    mgr->totalControlDropped++;
+    return false;
+}
+
+bool NetworkQueue_Dequeue(NetworkQueueManager_t *mgr, NetworkPacket_t *outPkt) {
+    if ((mgr == NULL) || (mgr->count == 0U)) {
+        return false;
+    }
+    if (outPkt != NULL) {
+        *outPkt = mgr->packets[0];
+    }
+    for (uint8_t i = 0U; i < (mgr->count - 1U); i++) {
+        mgr->packets[i] = mgr->packets[i + 1U];
+    }
+    mgr->count--;
+    return true;
+}
+
+static void Print_NetQueue(const char *label, const NetworkQueueManager_t *mgr) {
+    printf("  [%s] (Used=%u/%u | TelDrop=%u | CtrlDrop=%u)\n",
+           label, mgr->count, MAX_NETWORK_QUEUE_SIZE,
+           mgr->totalTelemetryDropped, mgr->totalControlDropped);
+    printf("    ");
+    for (uint8_t i = 0U; i < MAX_NETWORK_QUEUE_SIZE; i++) {
+        if (i < mgr->count) {
+            printf("[#%u:%s:%s] ",
+                   mgr->packets[i].sequenceId,
+                   (mgr->packets[i].type == PKT_TYPE_CRITICAL_CONTROL) ? "CRIT" : "TEL ",
+                   mgr->packets[i].payload);
+        } else {
+            printf("[EMPTY] ");
+        }
+    }
+    printf("\n\n");
+}
+
+int main(void) {
+    printf("================================================================================\n");
+    printf("   BÀI TẬP 16.3: PHÒNG THỦ CẠN KIỆT BỘ NHỚ MẠNG (OOM GUARD & PRIORITY EVICT)   \n");
+    printf("================================================================================\n");
+    printf("Châm ngôn IoT: \"Thà mất 1 gói log nhiệt độ còn hơn để OOM làm sập toàn MCU!\"\n\n");
+
+    NetworkQueueManager_t netMgr;
+    NetworkQueue_Init(&netMgr);
+
+    NetworkPacket_t p1 = { 1U, PKT_TYPE_TELEMETRY,        11U, "Temp=25.4C" };
+    NetworkPacket_t p2 = { 2U, PKT_TYPE_TELEMETRY,        11U, "Temp=25.5C" };
+    NetworkPacket_t p3 = { 3U, PKT_TYPE_TELEMETRY,        11U, "Temp=25.6C" };
+    NetworkPacket_t p4 = { 4U, PKT_TYPE_CRITICAL_CONTROL, 13U, "HEARTBEAT_OK" };
+
+    assert(NetworkQueue_Enqueue(&netMgr, &p1));
+    assert(NetworkQueue_Enqueue(&netMgr, &p2));
+    assert(NetworkQueue_Enqueue(&netMgr, &p3));
+    assert(NetworkQueue_Enqueue(&netMgr, &p4));
+    Print_NetQueue("1. Hàng đợi mạng đầy (4/4 PBUFs)", &netMgr);
+
+    NetworkPacket_t p5 = { 5U, PKT_TYPE_TELEMETRY, 11U, "Temp=25.7C" };
+    assert(NetworkQueue_Enqueue(&netMgr, &p5) == false);
+    Print_NetQueue("2. Gửi dư Telemetry #5 -> Bị Tail-Drop an toàn", &netMgr);
+
+    NetworkPacket_t pStop = { 6U, PKT_TYPE_CRITICAL_CONTROL, 14U, "EMERGENCY_STOP" };
+    assert(NetworkQueue_Enqueue(&netMgr, &pStop) == true);
+    Print_NetQueue("3. Gửi EMERGENCY_STOP #6 -> Trục xuất #1(TEL) nhường chỗ!", &netMgr);
+
+    NetworkPacket_t out;
+    assert(NetworkQueue_Dequeue(&netMgr, &out) && out.sequenceId == 2U);
+    assert(NetworkQueue_Dequeue(&netMgr, &out) && out.sequenceId == 3U);
+    assert(NetworkQueue_Dequeue(&netMgr, &out) && out.sequenceId == 4U);
+    assert(NetworkQueue_Dequeue(&netMgr, &out) && out.sequenceId == 6U);
+    assert(netMgr.count == 0U && netMgr.totalControlDropped == 0U);
+
+    printf(">>> [TEST PASSED] bt_16_3_lwip_packet_drop_oom_guard completed successfully.\n");
+    return 0;
+}
 ```
 </details>
+
+---
+
+## 🧭 HƯỚNG DẪN BẮT ĐẦU THỰC HÀNH TRÊN LINUX WSL
+1. Làm toàn bộ phần trắc nghiệm & phân tích tình huống trong tài liệu này trước khi viết code.
+2. Từ thư mục gốc `Bài tập/` trên máy ảo Linux WSL Ubuntu, biên dịch và chạy toàn bộ các bài lab của bài học này bằng lệnh:
+   ```bash
+   # Kiểm tra nhanh môi trường (lần đầu)
+   make check-env
+
+   # Biên dịch & chạy chi tiết kèm sơ đồ/bảng log trực quan trên terminal
+   make run-bai16
+
+   # Chạy kèm AddressSanitizer & UBSan để phát hiện lỗi bộ nhớ/UB
+   make MODE=asan run-bai16
+
+   # Hoặc kiểm tra từng bài riêng trong thư mục Bai_lam/Module_05_Troubleshooting_Production_OTA/Bai_16_Watchdog_and_Middleware
+   cd "Bai_lam/Module_05_Troubleshooting_Production_OTA/Bai_16_Watchdog_and_Middleware"
+   make run
+   make valgrind
+   ```
+3. Các file mã nguồn cần hoàn thiện:
+   - `bt_16_1_multi_task_software_watchdog.c`
+   - `bt_16_2_filesystem_gatekeeper_logger.c`
+   - `bt_16_3_lwip_packet_drop_oom_guard.c`
+4. Đảm bảo toàn bộ các bài đọc log phân tích đầy đủ và kết thúc với dòng `>>> [TEST PASSED]`.

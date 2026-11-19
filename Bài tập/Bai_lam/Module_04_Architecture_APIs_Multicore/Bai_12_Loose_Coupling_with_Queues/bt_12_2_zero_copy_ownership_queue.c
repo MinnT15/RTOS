@@ -136,6 +136,15 @@ int main(void) {
     printf("  - Đã cấp phát cả 4 buffers -> Còn lại rảnh: %u\n", BufferPool_GetAvailableCount());
     assert(BufferPool_GetAvailableCount() == 0U);
 
+    printf("\n[BẢN ĐỒ TRẠNG THÁI ZERO-COPY BUFFER POOL (4 x 128B)]:\n");
+    for (uint32_t i = 0U; i < POOL_SIZE; i++) {
+        printf("  Slot[%u] @ %p | Status: %-6s | Len: %3uB | Payload: \"%s\"\n",
+               i, (void *)&s_PoolStorage[i],
+               s_PoolStorage[i].bInUse ? "IN_USE" : "FREE",
+               s_PoolStorage[i].ulLength,
+               s_PoolStorage[i].bInUse && s_PoolStorage[i].ulLength > 0U ? (char *)s_PoolStorage[i].ucPayload : "-");
+    }
+
     // Lần xin cấp phát thứ 5 phải thất bại và trả về NULL
     PacketBuffer_t *pFailedBuf = BufferPool_Allocate();
     printf("  - Xin buffer thứ 5: Trả về %p (Kỳ vọng: NULL)\n", (void*)pFailedBuf);
